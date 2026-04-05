@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
+import { THEMES } from "./theme.js";
 
 // ============================================================
 // WOO HOME — Приборная панель Smart Home
@@ -110,80 +111,6 @@ const emptyDesignerEntry = () => ({
 const MONTHS_ALL = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const ALL_MONTHS_LABELS = [...MONTHS_ALL, ...MONTHS_ALL.map(m => m + " '27")];
 
-const THEME_STORAGE_KEY = "woo-home-theme";
-
-const THEMES = {
-  light: {
-    pageBg: "#f8fafc",
-    cardBg: "#ffffff",
-    mutedBg: "#f8fafc",
-    rowEven: "#ffffff",
-    rowOdd: "#fafbfc",
-    text: "#0f172a",
-    textSecondary: "#64748b",
-    textMuted: "#94a3b8",
-    textBody: "#334155",
-    border: "#e2e8f0",
-    rowLine: "#f1f5f9",
-    shadow: "0 1px 3px rgba(0,0,0,0.06)",
-    primary: "#3b82f6",
-    onPrimary: "#ffffff",
-    accentSoft: "#f0f9ff",
-    expandedHeader: "#f0f9ff",
-    closedRow: "#f0fdf4",
-    closedText: "#16a34a",
-    btnClosedBg: "#dcfce7",
-    btnOpenBg: "#f1f5f9",
-    empty: "#cbd5e1",
-    planMuted: "#b0b8c4",
-    factGreen: "#059669",
-    good: "#16a34a",
-    bad: "#ef4444",
-    inputBg: "#ffffff",
-    cashflowHighlight: "#f0fdf4",
-    chartGrid: "#f1f5f9",
-  },
-  dark: {
-    pageBg: "#0f172a",
-    cardBg: "#1e293b",
-    mutedBg: "#334155",
-    rowEven: "#1e293b",
-    rowOdd: "#172033",
-    text: "#f1f5f9",
-    textSecondary: "#94a3b8",
-    textMuted: "#64748b",
-    textBody: "#cbd5e1",
-    border: "#475569",
-    rowLine: "#334155",
-    shadow: "0 1px 3px rgba(0,0,0,0.35)",
-    primary: "#3b82f6",
-    onPrimary: "#ffffff",
-    accentSoft: "#1e3a5f",
-    expandedHeader: "#1e3a5f",
-    closedRow: "#14532d33",
-    closedText: "#4ade80",
-    btnClosedBg: "#14532d",
-    btnOpenBg: "#334155",
-    empty: "#64748b",
-    planMuted: "#64748b",
-    factGreen: "#34d399",
-    good: "#4ade80",
-    bad: "#f87171",
-    inputBg: "#0f172a",
-    cashflowHighlight: "#14532d40",
-    chartGrid: "#334155",
-  },
-};
-
-function readStoredTheme() {
-  try {
-    const s = localStorage.getItem(THEME_STORAGE_KEY);
-    return s === "dark" || s === "light" ? s : "light";
-  } catch {
-    return "light";
-  }
-}
-
 function dateToMonthIndex(dateStr) {
   if (!dateStr) return null;
   const [y, m] = dateStr.split("-").map(Number);
@@ -196,23 +123,16 @@ function dateToMonthIndex(dateStr) {
 // MAIN COMPONENT
 // ============================================================
 
-export default function WooHomeProjects({ savedData, onDataChange }) {
+export default function WooHomeProjects({ savedData, onDataChange, themeMode = "light" }) {
   const [facts, setFacts] = useState(initFacts);
   const [view, setView] = useState("plan");
   const [expandedMonth, setExpandedMonth] = useState(null);
   const [projects, setProjects] = useState([emptyProject()]);
   const [closedWeeks, setClosedWeeks] = useState({});
   const [designerDB, setDesignerDB] = useState([]);
-  const [colorMode, setColorMode] = useState(readStoredTheme);
   const isLoadedRef = useRef(false);
 
-  const pal = THEMES[colorMode];
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, colorMode);
-    } catch { /* ignore */ }
-  }, [colorMode]);
+  const pal = THEMES[themeMode];
 
   useEffect(() => {
     if (savedData && !isLoadedRef.current) {
@@ -459,37 +379,11 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
   }, []);
 
   return (
-    <div style={{ maxWidth: 1300, margin: "0 auto", padding: "24px 16px", fontFamily: "'Inter', -apple-system, sans-serif", background: pal.pageBg, minHeight: "100vh", color: pal.text, colorScheme: colorMode }}>
+    <div style={{ maxWidth: 1300, margin: "0 auto", padding: "24px 16px", fontFamily: "'Inter', -apple-system, sans-serif", background: pal.pageBg, minHeight: "100%", color: pal.text, colorScheme: themeMode }}>
 
-      <div style={{ marginBottom: 20, display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: pal.text, margin: 0 }}>Приборная панель Woo Home Smart Home</h1>
-          <p style={{ fontSize: 13, color: pal.textSecondary, marginTop: 4 }}>Календарь 2026 · Апрель–Декабрь</p>
-        </div>
-        <div style={{ display: "flex", gap: 4, background: pal.cardBg, borderRadius: 10, padding: 4, boxShadow: pal.shadow }}>
-          <button
-            type="button"
-            onClick={() => setColorMode("light")}
-            style={{
-              padding: "8px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
-              background: colorMode === "light" ? pal.primary : "transparent",
-              color: colorMode === "light" ? pal.onPrimary : pal.textSecondary,
-            }}
-          >
-            Светлая
-          </button>
-          <button
-            type="button"
-            onClick={() => setColorMode("dark")}
-            style={{
-              padding: "8px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
-              background: colorMode === "dark" ? pal.primary : "transparent",
-              color: colorMode === "dark" ? pal.onPrimary : pal.textSecondary,
-            }}
-          >
-            Тёмная
-          </button>
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: pal.text, margin: 0 }}>Приборная панель Woo Home Smart Home</h1>
+        <p style={{ fontSize: 13, color: pal.textSecondary, marginTop: 4 }}>Календарь 2026 · Апрель–Декабрь</p>
       </div>
 
       {/* KPI — выручка = проектирование + проекты из договоров */}
