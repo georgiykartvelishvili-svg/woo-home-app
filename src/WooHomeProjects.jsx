@@ -79,12 +79,12 @@ const fmtVal = (n, isMoney) => {
   return isMoney ? fmtMoney(num) : num;
 };
 
-function Deviation({ plan, fact }) {
+function Deviation({ plan, fact, good = "#16a34a", bad = "#ef4444" }) {
   if (!fact && fact !== 0) return null;
   const f = typeof fact === "string" ? parseFloat(fact) : fact;
   if (isNaN(f) || !plan) return null;
   const diff = f - plan;
-  const color = diff >= 0 ? "#16a34a" : "#ef4444";
+  const color = diff >= 0 ? good : bad;
   return <span style={{ fontSize: 10, fontWeight: 600, color, marginLeft: 2 }}>
     {diff > 0 ? "+" : ""}{diff}
   </span>;
@@ -110,6 +110,80 @@ const emptyDesignerEntry = () => ({
 const MONTHS_ALL = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
 const ALL_MONTHS_LABELS = [...MONTHS_ALL, ...MONTHS_ALL.map(m => m + " '27")];
 
+const THEME_STORAGE_KEY = "woo-home-theme";
+
+const THEMES = {
+  light: {
+    pageBg: "#f8fafc",
+    cardBg: "#ffffff",
+    mutedBg: "#f8fafc",
+    rowEven: "#ffffff",
+    rowOdd: "#fafbfc",
+    text: "#0f172a",
+    textSecondary: "#64748b",
+    textMuted: "#94a3b8",
+    textBody: "#334155",
+    border: "#e2e8f0",
+    rowLine: "#f1f5f9",
+    shadow: "0 1px 3px rgba(0,0,0,0.06)",
+    primary: "#3b82f6",
+    onPrimary: "#ffffff",
+    accentSoft: "#f0f9ff",
+    expandedHeader: "#f0f9ff",
+    closedRow: "#f0fdf4",
+    closedText: "#16a34a",
+    btnClosedBg: "#dcfce7",
+    btnOpenBg: "#f1f5f9",
+    empty: "#cbd5e1",
+    planMuted: "#b0b8c4",
+    factGreen: "#059669",
+    good: "#16a34a",
+    bad: "#ef4444",
+    inputBg: "#ffffff",
+    cashflowHighlight: "#f0fdf4",
+    chartGrid: "#f1f5f9",
+  },
+  dark: {
+    pageBg: "#0f172a",
+    cardBg: "#1e293b",
+    mutedBg: "#334155",
+    rowEven: "#1e293b",
+    rowOdd: "#172033",
+    text: "#f1f5f9",
+    textSecondary: "#94a3b8",
+    textMuted: "#64748b",
+    textBody: "#cbd5e1",
+    border: "#475569",
+    rowLine: "#334155",
+    shadow: "0 1px 3px rgba(0,0,0,0.35)",
+    primary: "#3b82f6",
+    onPrimary: "#ffffff",
+    accentSoft: "#1e3a5f",
+    expandedHeader: "#1e3a5f",
+    closedRow: "#14532d33",
+    closedText: "#4ade80",
+    btnClosedBg: "#14532d",
+    btnOpenBg: "#334155",
+    empty: "#64748b",
+    planMuted: "#64748b",
+    factGreen: "#34d399",
+    good: "#4ade80",
+    bad: "#f87171",
+    inputBg: "#0f172a",
+    cashflowHighlight: "#14532d40",
+    chartGrid: "#334155",
+  },
+};
+
+function readStoredTheme() {
+  try {
+    const s = localStorage.getItem(THEME_STORAGE_KEY);
+    return s === "dark" || s === "light" ? s : "light";
+  } catch {
+    return "light";
+  }
+}
+
 function dateToMonthIndex(dateStr) {
   if (!dateStr) return null;
   const [y, m] = dateStr.split("-").map(Number);
@@ -129,7 +203,16 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
   const [projects, setProjects] = useState([emptyProject()]);
   const [closedWeeks, setClosedWeeks] = useState({});
   const [designerDB, setDesignerDB] = useState([]);
+  const [colorMode, setColorMode] = useState(readStoredTheme);
   const isLoadedRef = useRef(false);
+
+  const pal = THEMES[colorMode];
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, colorMode);
+    } catch { /* ignore */ }
+  }, [colorMode]);
 
   useEffect(() => {
     if (savedData && !isLoadedRef.current) {
@@ -331,17 +414,19 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
   const toggleMonth = (mi) => setExpandedMonth(prev => prev === mi ? null : mi);
 
   const projInputStyle = {
-    padding: "8px 10px", border: "2px solid #e2e8f0", borderRadius: 8,
+    padding: "8px 10px", border: `2px solid ${pal.border}`, borderRadius: 8,
     fontSize: 13, outline: "none", transition: "border 0.2s", width: "100%", boxSizing: "border-box",
+    background: pal.inputBg, color: pal.text,
   };
 
   const inpStyle = (color) => ({
-    width: 54, padding: "5px 4px", border: "2px solid #e2e8f0", borderRadius: 6,
+    width: 54, padding: "5px 4px", border: `2px solid ${pal.border}`, borderRadius: 6,
     fontSize: 12, textAlign: "center", outline: "none", fontWeight: 600,
     color, transition: "border 0.2s", boxSizing: "border-box",
+    background: pal.inputBg,
   });
 
-  const cardStyle = { background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 };
+  const cardStyle = { background: pal.cardBg, borderRadius: 12, padding: 20, boxShadow: pal.shadow, marginBottom: 16 };
 
   // Total revenue = funnel money fact + project totals from contracts
   const totalRevenueFact = useMemo(() => {
@@ -374,11 +459,37 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
   }, []);
 
   return (
-    <div style={{ maxWidth: 1300, margin: "0 auto", padding: "24px 16px", fontFamily: "'Inter', -apple-system, sans-serif", background: "#f8fafc", minHeight: "100vh" }}>
+    <div style={{ maxWidth: 1300, margin: "0 auto", padding: "24px 16px", fontFamily: "'Inter', -apple-system, sans-serif", background: pal.pageBg, minHeight: "100vh", color: pal.text, colorScheme: colorMode }}>
 
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", margin: 0 }}>Приборная панель Woo Home Smart Home</h1>
-        <p style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Календарь 2026 · Апрель–Декабрь</p>
+      <div style={{ marginBottom: 20, display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: pal.text, margin: 0 }}>Приборная панель Woo Home Smart Home</h1>
+          <p style={{ fontSize: 13, color: pal.textSecondary, marginTop: 4 }}>Календарь 2026 · Апрель–Декабрь</p>
+        </div>
+        <div style={{ display: "flex", gap: 4, background: pal.cardBg, borderRadius: 10, padding: 4, boxShadow: pal.shadow }}>
+          <button
+            type="button"
+            onClick={() => setColorMode("light")}
+            style={{
+              padding: "8px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
+              background: colorMode === "light" ? pal.primary : "transparent",
+              color: colorMode === "light" ? pal.onPrimary : pal.textSecondary,
+            }}
+          >
+            Светлая
+          </button>
+          <button
+            type="button"
+            onClick={() => setColorMode("dark")}
+            style={{
+              padding: "8px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
+              background: colorMode === "dark" ? pal.primary : "transparent",
+              color: colorMode === "dark" ? pal.onPrimary : pal.textSecondary,
+            }}
+          >
+            Тёмная
+          </button>
+        </div>
       </div>
 
       {/* KPI — выручка = проектирование + проекты из договоров */}
@@ -388,15 +499,15 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
           const fact = m.key === "money" ? totalRevenueFact : totals.fact[m.key];
           const pct = plan > 0 ? Math.round(fact / plan * 100) : 0;
           return (
-            <div key={m.key} style={{ background: "#fff", borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", borderLeft: `4px solid ${m.color}` }}>
-              <div style={{ fontSize: 11, color: "#64748b" }}>{m.icon} {m.key === "money" ? "Выручка (проект. + проекты)" : m.label}</div>
+            <div key={m.key} style={{ background: pal.cardBg, borderRadius: 10, padding: "12px 14px", boxShadow: pal.shadow, borderLeft: `4px solid ${m.color}` }}>
+              <div style={{ fontSize: 11, color: pal.textSecondary }}>{m.icon} {m.key === "money" ? "Выручка (проект. + проекты)" : m.label}</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
-                <span style={{ fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
+                <span style={{ fontSize: 20, fontWeight: 700, color: pal.text }}>
                   {fact > 0 ? fmtVal(fact, m.isMoney) : "—"}
                 </span>
-                <span style={{ fontSize: 12, color: "#94a3b8" }}>/ {fmtVal(plan, m.isMoney)}</span>
+                <span style={{ fontSize: 12, color: pal.textMuted }}>/ {fmtVal(plan, m.isMoney)}</span>
               </div>
-              <div style={{ marginTop: 4, height: 4, background: "#e2e8f0", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ marginTop: 4, height: 4, background: pal.border, borderRadius: 2, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: m.color, borderRadius: 2 }} />
               </div>
             </div>
@@ -405,7 +516,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "#fff", borderRadius: 10, padding: 4, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", width: "fit-content", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, background: pal.cardBg, borderRadius: 10, padding: 4, boxShadow: pal.shadow, width: "fit-content", flexWrap: "wrap" }}>
         {[
           { id: "plan", label: "План to be" },
           { id: "funnel", label: "Воронка по неделям" },
@@ -416,7 +527,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
         ].map(t => (
           <button key={t.id} onClick={() => setView(t.id)} style={{
             padding: "8px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500,
-            background: view === t.id ? "#3b82f6" : "transparent", color: view === t.id ? "#fff" : "#64748b",
+            background: view === t.id ? pal.primary : "transparent", color: view === t.id ? pal.onPrimary : pal.textSecondary,
           }}>{t.label}</button>
         ))}
       </div>
@@ -426,7 +537,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
         <div>
           {/* Целевой финансовый результат */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Целевой финансовый результат 2026</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: pal.text, margin: "0 0 16px" }}>Целевой финансовый результат 2026</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
               {[
                 { l: "Выручка", v: fmtMoney(totals.plan.money) + " ₽", c: "#10b981" },
@@ -434,9 +545,9 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                 { l: "Агентские (10%)", v: "−" + fmtMoney(totals.plan.deals * 300_000) + " ₽", c: "#f59e0b" },
                 { l: "Прибыль", v: fmtMoney(totals.plan.money * 0.6 - totals.plan.deals * 300_000) + " ₽", c: "#8b5cf6" },
               ].map((item, i) => (
-                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>{item.l}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{item.v}</div>
+                <div key={i} style={{ background: pal.mutedBg, borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
+                  <div style={{ fontSize: 11, color: pal.textSecondary }}>{item.l}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: pal.text, marginTop: 4 }}>{item.v}</div>
                 </div>
               ))}
             </div>
@@ -444,7 +555,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
 
           {/* Компоненты бизнес-модели */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Компоненты бизнес-модели</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: pal.text, margin: "0 0 16px" }}>Компоненты бизнес-модели</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
               {[
                 { l: "Средний чек", v: "3 000 000 ₽", c: "#3b82f6" },
@@ -453,9 +564,9 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                 { l: "Мощность PM", v: "4–6 объектов", c: "#64748b" },
                 { l: "Учёт выручки", v: "По поступлению ДС", c: "#94a3b8" },
               ].map((p, i) => (
-                <div key={i} style={{ padding: "10px 14px", background: "#f8fafc", borderRadius: 8, borderLeft: `3px solid ${p.c}` }}>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>{p.l}</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", marginTop: 2 }}>{p.v}</div>
+                <div key={i} style={{ padding: "10px 14px", background: pal.mutedBg, borderRadius: 8, borderLeft: `3px solid ${p.c}` }}>
+                  <div style={{ fontSize: 11, color: pal.textSecondary }}>{p.l}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: pal.textBody, marginTop: 2 }}>{p.v}</div>
                 </div>
               ))}
             </div>
@@ -463,16 +574,16 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
 
           {/* Рынок дизайнеров (упрощённый) */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Рынок дизайнеров · Челябинск</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: pal.text, margin: "0 0 16px" }}>Рынок дизайнеров · Челябинск</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
               {[
                 { l: "Всего дизайнеров", v: TOTAL_DESIGNERS, c: "#94a3b8" },
                 { l: "В телефонном справочнике", v: PHONE_BOOK_DESIGNERS, c: "#3b82f6" },
                 { l: "Целевое кол-во подписанных к концу года", v: 72, c: "#f59e0b" },
               ].map((item, i) => (
-                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>{item.l}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{item.v}</div>
+                <div key={i} style={{ background: pal.mutedBg, borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
+                  <div style={{ fontSize: 11, color: pal.textSecondary }}>{item.l}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: pal.text, marginTop: 4 }}>{item.v}</div>
                 </div>
               ))}
             </div>
@@ -480,7 +591,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
 
           {/* Конверсионная модель */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Конверсионная модель (обратный расчёт от договоров)</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: pal.text, margin: "0 0 16px" }}>Конверсионная модель (обратный расчёт от договоров)</h3>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "16px 0", flexWrap: "wrap" }}>
               {[
                 { label: "48 касаний", sub: "Звонки, сообщения", color: "#94a3b8" },
@@ -493,42 +604,42 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                 { label: "×3М", arrow: true },
                 { label: "12 млн ₽", sub: "Выручка в месяц", color: "#10b981" },
               ].map((item, i) => item.arrow
-                ? <div key={i} style={{ fontSize: 14, color: "#94a3b8", fontWeight: 700 }}>{item.label}</div>
+                ? <div key={i} style={{ fontSize: 14, color: pal.textMuted, fontWeight: 700 }}>{item.label}</div>
                 : <div key={i} style={{ background: item.color + "12", border: `2px solid ${item.color}`, borderRadius: 10, padding: "10px 14px", textAlign: "center", minWidth: 90 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: item.color }}>{item.label}</div>
-                    <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>{item.sub}</div>
+                    <div style={{ fontSize: 10, color: pal.textSecondary, marginTop: 2 }}>{item.sub}</div>
                   </div>
               )}
             </div>
-            <div style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", marginTop: 4 }}>Цифры на крейсерской скорости (Авг–Дек 2026)</div>
+            <div style={{ textAlign: "center", fontSize: 12, color: pal.textMuted, marginTop: 4 }}>Цифры на крейсерской скорости (Авг–Дек 2026)</div>
           </div>
 
           {/* Помесячный план — накопительный итог по всем показателям */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Помесячный план Апрель–Декабрь 2026 (накопительный)</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: pal.text, margin: "0 0 16px" }}>Помесячный план Апрель–Декабрь 2026 (накопительный)</h3>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12 }}>Месяц</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#94a3b8", fontSize: 12 }}>Касания</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#6366f1", fontSize: 12 }}>Встречи</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#3b82f6", fontSize: 12 }}>КП</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6", fontSize: 12 }}>Договоры</th>
-                    <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontSize: 12 }}>Выручка</th>
-                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 11 }}>Комментарий</th>
+                  <tr style={{ background: pal.mutedBg }}>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12 }}>Месяц</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#94a3b8", fontSize: 12 }}>Касания</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#6366f1", fontSize: 12 }}>Встречи</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#3b82f6", fontSize: 12 }}>КП</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#8b5cf6", fontSize: 12 }}>Договоры</th>
+                    <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: `2px solid ${pal.border}`, color: "#10b981", fontSize: 12 }}>Выручка</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 11 }}>Комментарий</th>
                   </tr>
                 </thead>
                 <tbody>
                   {monthlyPlanRows.map((row, i) => (
-                    <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{row.m}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>{row.cumTouches}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#6366f1", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.cumMeetings}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.cumKP}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#8b5cf6", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{row.cumDeals}</td>
-                      <td style={{ padding: "8px", textAlign: "right", color: "#10b981", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{fmtMoney(row.cumMoney)}</td>
-                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontSize: 11, borderBottom: "1px solid #f1f5f9" }}>{row.note}</td>
+                    <tr key={i} style={{ background: i % 2 === 0 ? pal.rowEven : pal.rowOdd }}>
+                      <td style={{ padding: "10px 12px", fontWeight: 600, color: pal.textBody, borderBottom: `1px solid ${pal.rowLine}` }}>{row.m}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: pal.textMuted, borderBottom: `1px solid ${pal.rowLine}` }}>{row.cumTouches}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: "#6366f1", fontWeight: 600, borderBottom: `1px solid ${pal.rowLine}` }}>{row.cumMeetings}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6", fontWeight: 600, borderBottom: `1px solid ${pal.rowLine}` }}>{row.cumKP}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: "#8b5cf6", fontWeight: 700, borderBottom: `1px solid ${pal.rowLine}` }}>{row.cumDeals}</td>
+                      <td style={{ padding: "8px", textAlign: "right", color: "#10b981", fontWeight: 700, borderBottom: `1px solid ${pal.rowLine}` }}>{fmtMoney(row.cumMoney)}</td>
+                      <td style={{ padding: "8px 12px", color: pal.textMuted, fontSize: 11, borderBottom: `1px solid ${pal.rowLine}` }}>{row.note}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -538,18 +649,18 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
 
           {/* План найма */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>План найма</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: pal.text, margin: "0 0 16px" }}>План найма</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               {[
                 { period: "Апр–Июн", label: "Фаза 1", hires: "Менеджер по дизайнерам + ассистент", note: "3 проекта оплачивают 6 мес зарплат", c: "#3b82f6" },
                 { period: "Июль", label: "Фаза 2", hires: "2-й PM + ассистент проектировщика", note: "При выполнении плана", c: "#8b5cf6" },
                 { period: "Крейсер", label: "Целевой штат", hires: "1 менеджер, 1 асс, 2 PM, 2 асс", note: "4–6 объектов на пару PM+асс", c: "#10b981" },
               ].map((phase, i) => (
-                <div key={i} style={{ padding: 16, borderRadius: 10, borderLeft: `4px solid ${phase.c}`, background: "#f8fafc" }}>
+                <div key={i} style={{ padding: 16, borderRadius: 10, borderLeft: `4px solid ${phase.c}`, background: pal.mutedBg }}>
                   <div style={{ fontSize: 11, color: phase.c, fontWeight: 700 }}>{phase.period}</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{phase.label}</div>
-                  <div style={{ fontSize: 12, color: "#334155", marginTop: 6 }}>{phase.hires}</div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{phase.note}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: pal.text, marginTop: 4 }}>{phase.label}</div>
+                  <div style={{ fontSize: 12, color: pal.textBody, marginTop: 6 }}>{phase.hires}</div>
+                  <div style={{ fontSize: 11, color: pal.textMuted, marginTop: 4 }}>{phase.note}</div>
                 </div>
               ))}
             </div>
@@ -561,7 +672,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
       {view === "funnel" && (
         <div>
           {/* Конверсия */}
-          <div style={{ background: "#fff", borderRadius: 10, padding: "12px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 12 }}>
+          <div style={{ background: pal.cardBg, borderRadius: 10, padding: "12px 20px", boxShadow: pal.shadow, marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13, flexWrap: "wrap" }}>
               {[
                 { l: "Касания", c: "#94a3b8" }, { l: "×50%→", arrow: true },
@@ -570,7 +681,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                 { l: "Договоры", c: "#8b5cf6" }, { l: "×3М→", arrow: true },
                 { l: "Выр. за проект.", c: "#10b981" },
               ].map((x, i) => x.arrow
-                ? <span key={i} style={{ color: "#94a3b8", fontWeight: 600 }}>{x.l}</span>
+                ? <span key={i} style={{ color: pal.textMuted, fontWeight: 600 }}>{x.l}</span>
                 : <span key={i} style={{ background: x.c + "18", color: x.c, fontWeight: 700, padding: "4px 10px", borderRadius: 6 }}>{x.l}</span>
               )}
             </div>
@@ -580,7 +691,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
           {data.map((month, mi) => {
             const isExpanded = expandedMonth === mi;
             return (
-              <div key={mi} style={{ background: "#fff", borderRadius: 10, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 6, overflow: "hidden" }}>
+              <div key={mi} style={{ background: pal.cardBg, borderRadius: 10, boxShadow: pal.shadow, marginBottom: 6, overflow: "hidden" }}>
 
                 {/* Month header */}
                 <div
@@ -588,15 +699,15 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                   style={{
                     display: "grid", gridTemplateColumns: "130px repeat(5, 1fr) 70px",
                     alignItems: "center", padding: "10px 14px", cursor: "pointer",
-                    background: isExpanded ? "#f0f9ff" : "#fff",
-                    borderBottom: isExpanded ? "2px solid #3b82f6" : "1px solid #f1f5f9",
+                    background: isExpanded ? pal.expandedHeader : pal.cardBg,
+                    borderBottom: isExpanded ? `2px solid ${pal.primary}` : `1px solid ${pal.rowLine}`,
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 12, color: "#3b82f6", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▶</span>
+                    <span style={{ fontSize: 12, color: pal.primary, transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▶</span>
                     <div>
-                      <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 14 }}>{month.month}</div>
-                      <div style={{ fontSize: 10, color: "#94a3b8" }}>{month.weeks.length} нед.</div>
+                      <div style={{ fontWeight: 700, color: pal.text, fontSize: 14 }}>{month.month}</div>
+                      <div style={{ fontSize: 10, color: pal.textMuted }}>{month.weeks.length} нед.</div>
                     </div>
                   </div>
 
@@ -605,21 +716,21 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                     const fact = month.monthFactFilled[metric.key] ? month.monthFact[metric.key] : null;
                     return (
                       <div key={metric.key} style={{ textAlign: "center" }}>
-                        <div style={{ fontSize: 9, color: "#94a3b8" }}>{metric.icon} {metric.label}</div>
+                        <div style={{ fontSize: 9, color: pal.textMuted }}>{metric.icon} {metric.label}</div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: fact !== null ? metric.color : "#cbd5e1" }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: fact !== null ? metric.color : pal.empty }}>
                             {fact !== null ? fmtVal(fact, metric.isMoney) : "—"}
                           </span>
-                          <span style={{ fontSize: 10, color: "#94a3b8" }}>/{fmtVal(plan, metric.isMoney)}</span>
+                          <span style={{ fontSize: 10, color: pal.textMuted }}>/{fmtVal(plan, metric.isMoney)}</span>
                         </div>
-                        {fact !== null && !metric.isMoney && <Deviation plan={plan} fact={fact} />}
+                        {fact !== null && !metric.isMoney && <Deviation plan={plan} fact={fact} good={pal.good} bad={pal.bad} />}
                       </div>
                     );
                   })}
 
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 9, color: "#94a3b8" }}>👥</div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : "#ef4444" }}>
+                    <div style={{ fontSize: 9, color: pal.textMuted }}>👥</div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : pal.bad }}>
                       {designersRemaining}
                     </span>
                   </div>
@@ -630,38 +741,38 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                   <div>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                       <thead>
-                        <tr style={{ background: "#f8fafc" }}>
-                          <th style={{ padding: "6px 14px", textAlign: "left", borderBottom: "1px solid #e2e8f0", color: "#64748b", fontSize: 11, width: 130 }}>Неделя</th>
+                        <tr style={{ background: pal.mutedBg }}>
+                          <th style={{ padding: "6px 14px", textAlign: "left", borderBottom: `1px solid ${pal.border}`, color: pal.textSecondary, fontSize: 11, width: 130 }}>Неделя</th>
                           {METRICS.map(m => (
-                            <th key={m.key} colSpan={2} style={{ padding: "6px 2px", textAlign: "center", borderBottom: "1px solid #e2e8f0", color: m.color, fontSize: 10 }}>
+                            <th key={m.key} colSpan={2} style={{ padding: "6px 2px", textAlign: "center", borderBottom: `1px solid ${pal.border}`, color: m.color, fontSize: 10 }}>
                               {m.icon} {m.label}
                             </th>
                           ))}
-                          <th style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid #e2e8f0", color: "#64748b", fontSize: 10, width: 60 }}>Статус</th>
+                          <th style={{ padding: "6px 8px", textAlign: "center", borderBottom: `1px solid ${pal.border}`, color: pal.textSecondary, fontSize: 10, width: 60 }}>Статус</th>
                         </tr>
-                        <tr style={{ background: "#fafbfc" }}>
-                          <th style={{ padding: "3px 14px", borderBottom: "1px solid #e2e8f0" }}></th>
+                        <tr style={{ background: pal.rowOdd }}>
+                          <th style={{ padding: "3px 14px", borderBottom: `1px solid ${pal.border}` }}></th>
                           {METRICS.map(m => (
                             <Fragment key={m.key}>
-                              <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#94a3b8" }}>план</th>
-                              <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#059669" }}>факт</th>
+                              <th style={{ padding: "3px", textAlign: "center", borderBottom: `1px solid ${pal.border}`, fontSize: 9, color: pal.textMuted }}>план</th>
+                              <th style={{ padding: "3px", textAlign: "center", borderBottom: `1px solid ${pal.border}`, fontSize: 9, color: pal.factGreen }}>факт</th>
                             </Fragment>
                           ))}
-                          <th style={{ padding: "3px", borderBottom: "1px solid #e2e8f0" }}></th>
+                          <th style={{ padding: "3px", borderBottom: `1px solid ${pal.border}` }}></th>
                         </tr>
                       </thead>
                       <tbody>
                         {month.weeks.map((week, wi) => (
-                          <tr key={wi} style={{ background: week.closed ? "#f0fdf4" : (wi % 2 === 0 ? "#fff" : "#fafbfc"), opacity: week.closed ? 0.7 : 1 }}>
-                            <td style={{ padding: "8px 14px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: week.closed ? "#16a34a" : "#334155", fontSize: 12, whiteSpace: "nowrap" }}>
+                          <tr key={wi} style={{ background: week.closed ? pal.closedRow : (wi % 2 === 0 ? pal.rowEven : pal.rowOdd), opacity: week.closed ? 0.7 : 1 }}>
+                            <td style={{ padding: "8px 14px", borderBottom: `1px solid ${pal.rowLine}`, fontWeight: 600, color: week.closed ? pal.closedText : pal.textBody, fontSize: 12, whiteSpace: "nowrap" }}>
                               {week.closed && "✓ "}{week.label}
                             </td>
                             {METRICS.map(metric => (
                               <Fragment key={metric.key}>
-                                <td style={{ padding: "4px 2px", textAlign: "center", borderBottom: "1px solid #f1f5f9", color: "#b0b8c4", fontSize: 11 }}>
+                                <td style={{ padding: "4px 2px", textAlign: "center", borderBottom: `1px solid ${pal.rowLine}`, color: pal.planMuted, fontSize: 11 }}>
                                   {fmtVal(week.plan[metric.key], metric.isMoney)}
                                 </td>
-                                <td style={{ padding: "3px 1px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
+                                <td style={{ padding: "3px 1px", textAlign: "center", borderBottom: `1px solid ${pal.rowLine}` }}>
                                   {week.closed ? (
                                     <span style={{ fontSize: 12, fontWeight: 600, color: metric.color }}>
                                       {week.fact[metric.key] || "—"}
@@ -674,19 +785,19 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                                       placeholder="—"
                                       style={inpStyle(metric.color)}
                                       onFocus={e => e.target.style.borderColor = metric.color}
-                                      onBlur={e => e.target.style.borderColor = "#e2e8f0"}
+                                      onBlur={e => e.target.style.borderColor = pal.border}
                                     />
                                   )}
                                 </td>
                               </Fragment>
                             ))}
-                            <td style={{ padding: "3px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "3px 4px", textAlign: "center", borderBottom: `1px solid ${pal.rowLine}` }}>
                               <button
                                 onClick={(e) => { e.stopPropagation(); toggleWeekClosed(week.weekIdx); }}
                                 style={{
                                   padding: "4px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
-                                  background: week.closed ? "#dcfce7" : "#f1f5f9",
-                                  color: week.closed ? "#16a34a" : "#94a3b8",
+                                  background: week.closed ? pal.btnClosedBg : pal.btnOpenBg,
+                                  color: week.closed ? pal.closedText : pal.textMuted,
                                 }}
                               >
                                 {week.closed ? "Открыть" : "Закрыть"}
@@ -695,20 +806,20 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                           </tr>
                         ))}
                         {/* Month total */}
-                        <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
-                          <td style={{ padding: "8px 14px", borderTop: "2px solid #3b82f6", color: "#0f172a", fontSize: 12 }}>Итого {month.short}</td>
+                        <tr style={{ background: pal.accentSoft, fontWeight: 700 }}>
+                          <td style={{ padding: "8px 14px", borderTop: `2px solid ${pal.primary}`, color: pal.text, fontSize: 12 }}>Итого {month.short}</td>
                           {METRICS.map(metric => (
                             <Fragment key={metric.key}>
-                              <td style={{ padding: "4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#64748b", fontSize: 11 }}>
+                              <td style={{ padding: "4px", textAlign: "center", borderTop: `2px solid ${pal.primary}`, color: pal.textSecondary, fontSize: 11 }}>
                                 {fmtVal(month.plan[metric.key], metric.isMoney)}
                               </td>
-                              <td style={{ padding: "4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: month.monthFactFilled[metric.key] ? metric.color : "#cbd5e1", fontWeight: 700, fontSize: 12 }}>
+                              <td style={{ padding: "4px", textAlign: "center", borderTop: `2px solid ${pal.primary}`, color: month.monthFactFilled[metric.key] ? metric.color : pal.empty, fontWeight: 700, fontSize: 12 }}>
                                 {month.monthFactFilled[metric.key] ? fmtVal(month.monthFact[metric.key], metric.isMoney) : "—"}
-                                {month.monthFactFilled[metric.key] && !metric.isMoney && <Deviation plan={month.plan[metric.key]} fact={month.monthFact[metric.key]} />}
+                                {month.monthFactFilled[metric.key] && !metric.isMoney && <Deviation plan={month.plan[metric.key]} fact={month.monthFact[metric.key]} good={pal.good} bad={pal.bad} />}
                               </td>
                             </Fragment>
                           ))}
-                          <td style={{ borderTop: "2px solid #3b82f6" }}></td>
+                          <td style={{ borderTop: `2px solid ${pal.primary}` }}></td>
                         </tr>
                       </tbody>
                     </table>
@@ -720,18 +831,18 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
 
           {/* Grand total */}
           <div style={{
-            background: "#fff", borderRadius: 10, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginTop: 6,
+            background: pal.cardBg, borderRadius: 10, boxShadow: pal.shadow, marginTop: 6,
             display: "grid", gridTemplateColumns: "130px repeat(5, 1fr) 70px",
             alignItems: "center", padding: "12px 14px",
           }}>
-            <div style={{ fontWeight: 800, color: "#0f172a", fontSize: 14 }}>ИТОГО 2026</div>
+            <div style={{ fontWeight: 800, color: pal.text, fontSize: 14 }}>ИТОГО 2026</div>
             {METRICS.map(metric => (
               <div key={metric.key} style={{ textAlign: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                  <span style={{ fontSize: 16, fontWeight: 700, color: totals.fact[metric.key] > 0 ? metric.color : "#cbd5e1" }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: totals.fact[metric.key] > 0 ? metric.color : pal.empty }}>
                     {totals.fact[metric.key] > 0 ? fmtVal(totals.fact[metric.key], metric.isMoney) : "—"}
                   </span>
-                  <span style={{ fontSize: 10, color: "#94a3b8" }}>/{fmtVal(totals.plan[metric.key], metric.isMoney)}</span>
+                  <span style={{ fontSize: 10, color: pal.textMuted }}>/{fmtVal(totals.plan[metric.key], metric.isMoney)}</span>
                 </div>
               </div>
             ))}
@@ -743,62 +854,62 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
       {/* ======= СВОДКА ======= */}
       {view === "summary" && (
         <div style={cardStyle}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 16px" }}>Сводная таблица</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: pal.text, margin: "0 0 16px" }}>Сводная таблица</h3>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b" }}>Месяц</th>
+                <tr style={{ background: pal.mutedBg }}>
+                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary }}>Месяц</th>
                   {METRICS.map(m => (
-                    <th key={m.key} colSpan={2} style={{ padding: "10px 4px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: m.color, fontSize: 11 }}>
+                    <th key={m.key} colSpan={2} style={{ padding: "10px 4px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: m.color, fontSize: 11 }}>
                       {m.icon} {m.label}
                     </th>
                   ))}
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#f59e0b", fontSize: 11 }}>👥 База</th>
+                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#f59e0b", fontSize: 11 }}>👥 База</th>
                 </tr>
                 <tr>
-                  <th style={{ padding: "3px 12px", borderBottom: "1px solid #e2e8f0" }}></th>
+                  <th style={{ padding: "3px 12px", borderBottom: `1px solid ${pal.border}` }}></th>
                   {METRICS.map(m => (
                     <Fragment key={m.key}>
-                      <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#94a3b8" }}>план</th>
-                      <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#059669" }}>факт</th>
+                      <th style={{ padding: "3px", textAlign: "center", borderBottom: `1px solid ${pal.border}`, fontSize: 9, color: pal.textMuted }}>план</th>
+                      <th style={{ padding: "3px", textAlign: "center", borderBottom: `1px solid ${pal.border}`, fontSize: 9, color: pal.factGreen }}>факт</th>
                     </Fragment>
                   ))}
-                  <th style={{ padding: "3px", borderBottom: "1px solid #e2e8f0" }}></th>
+                  <th style={{ padding: "3px", borderBottom: `1px solid ${pal.border}` }}></th>
                 </tr>
               </thead>
               <tbody>
                 {data.map((m, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{m.month}</td>
+                  <tr key={i} style={{ background: i % 2 === 0 ? pal.rowEven : pal.rowOdd }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 600, color: pal.textBody, borderBottom: `1px solid ${pal.rowLine}` }}>{m.month}</td>
                     {METRICS.map(metric => (
                       <Fragment key={metric.key}>
-                        <td style={{ padding: "6px 4px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "6px 4px", textAlign: "center", color: pal.textMuted, borderBottom: `1px solid ${pal.rowLine}` }}>
                           {fmtVal(m.plan[metric.key], metric.isMoney)}
                         </td>
-                        <td style={{ padding: "6px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: m.monthFactFilled[metric.key] ? metric.color : "#cbd5e1" }}>
+                        <td style={{ padding: "6px 4px", textAlign: "center", borderBottom: `1px solid ${pal.rowLine}`, fontWeight: 600, color: m.monthFactFilled[metric.key] ? metric.color : pal.empty }}>
                           {m.monthFactFilled[metric.key] ? fmtVal(m.monthFact[metric.key], metric.isMoney) : "—"}
                         </td>
                       </Fragment>
                     ))}
-                    <td style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : "#ef4444" }}>
+                    <td style={{ padding: "6px 8px", textAlign: "center", borderBottom: `1px solid ${pal.rowLine}`, fontWeight: 600, color: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : pal.bad }}>
                       {designersRemaining}
                     </td>
                   </tr>
                 ))}
-                <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
-                  <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
+                <tr style={{ background: pal.accentSoft, fontWeight: 700 }}>
+                  <td style={{ padding: "12px", borderTop: `2px solid ${pal.primary}`, color: pal.text }}>ИТОГО</td>
                   {METRICS.map(metric => (
                     <Fragment key={metric.key}>
-                      <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#64748b" }}>
+                      <td style={{ padding: "6px 4px", textAlign: "center", borderTop: `2px solid ${pal.primary}`, color: pal.textSecondary }}>
                         {fmtVal(totals.plan[metric.key], metric.isMoney)}
                       </td>
-                      <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: totals.fact[metric.key] > 0 ? metric.color : "#cbd5e1" }}>
+                      <td style={{ padding: "6px 4px", textAlign: "center", borderTop: `2px solid ${pal.primary}`, color: totals.fact[metric.key] > 0 ? metric.color : pal.empty }}>
                         {totals.fact[metric.key] > 0 ? fmtVal(totals.fact[metric.key], metric.isMoney) : "—"}
                       </td>
                     </Fragment>
                   ))}
-                  <td style={{ padding: "6px 8px", textAlign: "center", borderTop: "2px solid #3b82f6", fontWeight: 700, color: "#f59e0b" }}>
+                  <td style={{ padding: "6px 8px", textAlign: "center", borderTop: `2px solid ${pal.primary}`, fontWeight: 700, color: "#f59e0b" }}>
                     {designersRemaining}
                   </td>
                 </tr>
@@ -813,10 +924,10 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
         <div>
           <div style={cardStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: 0 }}>Реестр договоров</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: pal.text, margin: 0 }}>Реестр договоров</h3>
               <button onClick={addProject} style={{
                 padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer",
-                background: "#3b82f6", color: "#fff", fontSize: 13, fontWeight: 600
+                background: pal.primary, color: pal.onPrimary, fontSize: 13, fontWeight: 600
               }}>+ Добавить договор</button>
             </div>
 
@@ -828,9 +939,9 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                 { icon: "🏠", label: "За проекты", value: fmtMoney(projectTotals.projectTotal) + " ₽", color: "#8b5cf6" },
                 { icon: "💰", label: "Итого", value: fmtMoney(projectTotals.total) + " ₽", color: "#10b981" },
               ].map((kpi, i) => (
-                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "10px 14px", borderLeft: `4px solid ${kpi.color}` }}>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>{kpi.icon} {kpi.label}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 2 }}>{kpi.value}</div>
+                <div key={i} style={{ background: pal.mutedBg, borderRadius: 10, padding: "10px 14px", borderLeft: `4px solid ${kpi.color}` }}>
+                  <div style={{ fontSize: 11, color: pal.textSecondary }}>{kpi.icon} {kpi.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: pal.text, marginTop: 2 }}>{kpi.value}</div>
                 </div>
               ))}
             </div>
@@ -838,66 +949,66 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 800 }}>
                 <thead>
-                  <tr style={{ background: "#f8fafc" }}>
-                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "4%" }}>#</th>
-                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "16%" }}>Проект</th>
-                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#6366f1", fontSize: 12, width: "14%" }}>Дизайнер</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "11%" }}>Дата продажи</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#f59e0b", fontSize: 12, width: "13%" }}>Проектирование ₽</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "11%" }}>Дата заверш.</th>
-                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6", fontSize: 12, width: "13%" }}>Сумма проекта ₽</th>
+                  <tr style={{ background: pal.mutedBg }}>
+                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "4%" }}>#</th>
+                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "16%" }}>Проект</th>
+                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: "#6366f1", fontSize: 12, width: "14%" }}>Дизайнер</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "11%" }}>Дата продажи</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#f59e0b", fontSize: 12, width: "13%" }}>Проектирование ₽</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "11%" }}>Дата заверш.</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#8b5cf6", fontSize: 12, width: "13%" }}>Сумма проекта ₽</th>
                     <th style={{ padding: "10px 8px", width: "4%" }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {projects.map((p, idx) => (
-                    <tr key={p.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                      <td style={{ padding: "10px 8px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontWeight: 600 }}>{idx + 1}</td>
-                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                    <tr key={p.id} style={{ background: idx % 2 === 0 ? pal.rowEven : pal.rowOdd }}>
+                      <td style={{ padding: "10px 8px", borderBottom: `1px solid ${pal.rowLine}`, color: pal.textMuted, fontWeight: 600 }}>{idx + 1}</td>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="text" placeholder="ЖК Парковый..." value={p.name}
                           onChange={e => updateProject(p.id, "name", e.target.value)}
                           style={projInputStyle}
-                          onFocus={e => e.target.style.borderColor = "#3b82f6"}
-                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                          onFocus={e => e.target.style.borderColor = pal.primary}
+                          onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
-                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="text" list="designer-list" placeholder="Иванова А." value={p.designer}
                           onChange={e => updateProject(p.id, "designer", e.target.value)}
                           style={{ ...projInputStyle, color: "#6366f1" }}
                           onFocus={e => e.target.style.borderColor = "#6366f1"}
-                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                          onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
-                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="month" value={p.saleDate}
                           onChange={e => updateProject(p.id, "saleDate", e.target.value)}
                           style={{ ...projInputStyle, textAlign: "center" }}
-                          onFocus={e => e.target.style.borderColor = "#3b82f6"}
-                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                          onFocus={e => e.target.style.borderColor = pal.primary}
+                          onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
-                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="number" placeholder="150000" value={p.designFee}
                           onChange={e => updateProject(p.id, "designFee", e.target.value)}
                           style={{ ...projInputStyle, textAlign: "right", color: "#f59e0b", fontWeight: 600 }}
                           onFocus={e => e.target.style.borderColor = "#f59e0b"}
-                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                          onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
-                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="month" value={p.endDate}
                           onChange={e => updateProject(p.id, "endDate", e.target.value)}
                           style={{ ...projInputStyle, textAlign: "center" }}
                           onFocus={e => e.target.style.borderColor = "#8b5cf6"}
-                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                          onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
-                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="number" placeholder="3000000" value={p.projectSum}
                           onChange={e => updateProject(p.id, "projectSum", e.target.value)}
                           style={{ ...projInputStyle, textAlign: "right", color: "#8b5cf6", fontWeight: 600 }}
                           onFocus={e => e.target.style.borderColor = "#8b5cf6"}
-                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                          onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
-                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9", textAlign: "center" }}>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}`, textAlign: "center" }}>
                         <button onClick={() => removeProject(p.id)} style={{
-                          background: "none", border: "none", cursor: "pointer", color: "#ef4444",
+                          background: "none", border: "none", cursor: "pointer", color: pal.bad,
                           fontSize: 16, padding: 4, opacity: 0.5
                         }}
                           onMouseEnter={e => e.target.style.opacity = 1}
@@ -914,30 +1025,30 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             </div>
 
             <button onClick={addProject} style={{
-              marginTop: 14, padding: "10px 20px", borderRadius: 8, border: "2px dashed #e2e8f0",
-              cursor: "pointer", background: "transparent", color: "#94a3b8", fontSize: 13,
+              marginTop: 14, padding: "10px 20px", borderRadius: 8, border: `2px dashed ${pal.border}`,
+              cursor: "pointer", background: "transparent", color: pal.textMuted, fontSize: 13,
               fontWeight: 500, width: "100%"
             }}
-              onMouseEnter={e => { e.target.style.borderColor = "#3b82f6"; e.target.style.color = "#3b82f6"; }}
-              onMouseLeave={e => { e.target.style.borderColor = "#e2e8f0"; e.target.style.color = "#94a3b8"; }}
+              onMouseEnter={e => { e.target.style.borderColor = pal.primary; e.target.style.color = pal.primary; }}
+              onMouseLeave={e => { e.target.style.borderColor = pal.border; e.target.style.color = pal.textMuted; }}
             >+ Добавить договор</button>
           </div>
 
           {/* Статистика по дизайнерам */}
           {Object.keys(designerStats).length > 0 && (
             <div style={cardStyle}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 16px" }}>Статистика по дизайнерам</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: pal.text, margin: "0 0 16px" }}>Статистика по дизайнерам</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
                 {Object.entries(designerStats).map(([name, stats]) => (
-                  <div key={name} style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 16px", borderLeft: "4px solid #6366f1" }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{name}</div>
-                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                      Договоров: <strong style={{ color: "#3b82f6" }}>{stats.contracts}</strong>
+                  <div key={name} style={{ background: pal.mutedBg, borderRadius: 10, padding: "12px 16px", borderLeft: "4px solid #6366f1" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: pal.text }}>{name}</div>
+                    <div style={{ fontSize: 12, color: pal.textSecondary, marginTop: 4 }}>
+                      Договоров: <strong style={{ color: pal.primary }}>{stats.contracts}</strong>
                     </div>
-                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                    <div style={{ fontSize: 12, color: pal.textSecondary }}>
                       Проектирование: <strong style={{ color: "#f59e0b" }}>{fmtMoney(stats.designTotal)} ₽</strong>
                     </div>
-                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                    <div style={{ fontSize: 12, color: pal.textSecondary }}>
                       Проекты: <strong style={{ color: "#8b5cf6" }}>{fmtMoney(stats.projectTotal)} ₽</strong>
                     </div>
                   </div>
@@ -951,8 +1062,8 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
       {/* ======= ПЛАН ПО ДЕНЬГАМ ======= */}
       {view === "cashflow" && (
         <div style={cardStyle}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 4px" }}>План по деньгам</h3>
-          <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 16px" }}>Сводка по факту подписанных проектов</p>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: pal.text, margin: "0 0 4px" }}>План по деньгам</h3>
+          <p style={{ fontSize: 12, color: pal.textMuted, margin: "0 0 16px" }}>Сводка по факту подписанных проектов</p>
 
           {/* KPI */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
@@ -962,9 +1073,9 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
               { icon: "🏠", label: "Проекты", value: fmtMoney(projectTotals.projectTotal) + " ₽", color: "#8b5cf6" },
               { icon: "💰", label: "Итого", value: fmtMoney(projectTotals.total) + " ₽", color: "#10b981" },
             ].map((kpi, i) => (
-              <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "10px 14px", borderLeft: `4px solid ${kpi.color}` }}>
-                <div style={{ fontSize: 11, color: "#64748b" }}>{kpi.icon} {kpi.label}</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 2 }}>{kpi.value}</div>
+              <div key={i} style={{ background: pal.mutedBg, borderRadius: 10, padding: "10px 14px", borderLeft: `4px solid ${kpi.color}` }}>
+                <div style={{ fontSize: 11, color: pal.textSecondary }}>{kpi.icon} {kpi.label}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: pal.text, marginTop: 2 }}>{kpi.value}</div>
               </div>
             ))}
           </div>
@@ -972,13 +1083,13 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", minWidth: 80 }}>Месяц</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#f59e0b" }}>Проектирование</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6" }}>Проекты</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontWeight: 700 }}>Итого</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#0f172a", fontWeight: 700 }}>Нарастающим</th>
-                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#94a3b8" }}>Проекты</th>
+                <tr style={{ background: pal.mutedBg }}>
+                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, minWidth: 80 }}>Месяц</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: `2px solid ${pal.border}`, color: "#f59e0b" }}>Проектирование</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: `2px solid ${pal.border}`, color: "#8b5cf6" }}>Проекты</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: `2px solid ${pal.border}`, color: "#10b981", fontWeight: 700 }}>Итого</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: `2px solid ${pal.border}`, color: pal.text, fontWeight: 700 }}>Нарастающим</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textMuted }}>Проекты</th>
                 </tr>
               </thead>
               <tbody>
@@ -986,36 +1097,36 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                   const hasData = m.total > 0;
                   if (!hasData && i < 3) return null;
                   return (
-                    <tr key={i} style={{ background: hasData ? "#f0fdf4" : (i % 2 === 0 ? "#fff" : "#fafbfc") }}>
-                      <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: hasData ? "#0f172a" : "#94a3b8" }}>
-                        {i === 12 && <div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 700 }}>2027</div>}
+                    <tr key={i} style={{ background: hasData ? pal.cashflowHighlight : (i % 2 === 0 ? pal.rowEven : pal.rowOdd) }}>
+                      <td style={{ padding: "8px 12px", borderBottom: `1px solid ${pal.rowLine}`, fontWeight: 600, color: hasData ? pal.text : pal.textMuted }}>
+                        {i === 12 && <div style={{ fontSize: 10, color: pal.primary, fontWeight: 700 }}>2027</div>}
                         {m.month}
                       </td>
-                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.designIncome ? "#f59e0b" : "#e2e8f0", fontWeight: m.designIncome ? 600 : 400 }}>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: `1px solid ${pal.rowLine}`, color: m.designIncome ? "#f59e0b" : pal.border, fontWeight: m.designIncome ? 600 : 400 }}>
                         {m.designIncome ? fmtMoney(m.designIncome) : "—"}
                       </td>
-                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.projectIncome ? "#8b5cf6" : "#e2e8f0", fontWeight: m.projectIncome ? 600 : 400 }}>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: `1px solid ${pal.rowLine}`, color: m.projectIncome ? "#8b5cf6" : pal.border, fontWeight: m.projectIncome ? 600 : 400 }}>
                         {m.projectIncome ? fmtMoney(m.projectIncome) : "—"}
                       </td>
-                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.total ? "#10b981" : "#e2e8f0", fontWeight: 700 }}>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: `1px solid ${pal.rowLine}`, color: m.total ? "#10b981" : pal.border, fontWeight: 700 }}>
                         {m.total ? fmtMoney(m.total) : "—"}
                       </td>
-                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", fontWeight: 700, color: m.cumTotal ? "#0f172a" : "#e2e8f0" }}>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: `1px solid ${pal.rowLine}`, fontWeight: 700, color: m.cumTotal ? pal.text : pal.border }}>
                         {m.cumTotal ? fmtMoney(m.cumTotal) : "—"}
                       </td>
-                      <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontSize: 11 }}>
+                      <td style={{ padding: "8px 12px", borderBottom: `1px solid ${pal.rowLine}`, color: pal.textMuted, fontSize: 11 }}>
                         {[...m.names.design.map(n => "✏️ " + n), ...m.names.project.map(n => "🏠 " + n)].join(", ") || "—"}
                       </td>
                     </tr>
                   );
                 })}
-                <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
-                  <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
-                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#f59e0b" }}>{fmtMoney(projectTotals.designTotal)}</td>
-                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#8b5cf6" }}>{fmtMoney(projectTotals.projectTotal)}</td>
-                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#10b981" }}>{fmtMoney(projectTotals.total)}</td>
-                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>{fmtMoney(projectTotals.total)}</td>
-                  <td style={{ padding: "8px", borderTop: "2px solid #3b82f6" }}></td>
+                <tr style={{ background: pal.accentSoft, fontWeight: 700 }}>
+                  <td style={{ padding: "12px", borderTop: `2px solid ${pal.primary}`, color: pal.text }}>ИТОГО</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: `2px solid ${pal.primary}`, color: "#f59e0b" }}>{fmtMoney(projectTotals.designTotal)}</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: `2px solid ${pal.primary}`, color: "#8b5cf6" }}>{fmtMoney(projectTotals.projectTotal)}</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: `2px solid ${pal.primary}`, color: "#10b981" }}>{fmtMoney(projectTotals.total)}</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: `2px solid ${pal.primary}`, color: pal.text }}>{fmtMoney(projectTotals.total)}</td>
+                  <td style={{ padding: "8px", borderTop: `2px solid ${pal.primary}` }}></td>
                 </tr>
               </tbody>
             </table>
@@ -1024,14 +1135,14 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
           {/* Chart */}
           {projectTotals.total > 0 && (
             <div style={{ marginTop: 20 }}>
-              <h4 style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", margin: "0 0 12px" }}>Поступления по месяцам</h4>
+              <h4 style={{ fontSize: 14, fontWeight: 600, color: pal.text, margin: "0 0 12px" }}>Поступления по месяцам</h4>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={cashflow.filter(m => m.total > 0 || m.designIncome > 0 || m.projectIncome > 0)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1e6 ? (v/1e6).toFixed(0)+"М" : v >= 1000 ? (v/1000).toFixed(0)+"К" : v} />
-                  <Tooltip formatter={v => v.toLocaleString("ru-RU") + " ₽"} />
-                  <Legend />
+                  <CartesianGrid strokeDasharray="3 3" stroke={pal.chartGrid} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: pal.textSecondary }} stroke={pal.border} />
+                  <YAxis tick={{ fontSize: 11, fill: pal.textSecondary }} stroke={pal.border} tickFormatter={v => v >= 1e6 ? (v/1e6).toFixed(0)+"М" : v >= 1000 ? (v/1000).toFixed(0)+"К" : v} />
+                  <Tooltip formatter={v => v.toLocaleString("ru-RU") + " ₽"} contentStyle={{ background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 8, color: pal.text }} />
+                  <Legend wrapperStyle={{ color: pal.textSecondary }} />
                   <Bar dataKey="designIncome" name="Проектирование" fill="#f59e0b" radius={[4,4,0,0]} stackId="a" />
                   <Bar dataKey="projectIncome" name="Проекты" fill="#8b5cf6" radius={[4,4,0,0]} stackId="a" />
                 </BarChart>
@@ -1046,17 +1157,17 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
         <div>
           {/* Обзор */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Обзор базы дизайнеров</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: pal.text, margin: "0 0 16px" }}>Обзор базы дизайнеров</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
               {[
                 { l: "Всего в городе", v: TOTAL_DESIGNERS, c: "#94a3b8" },
                 { l: "В справочнике", v: PHONE_BOOK_DESIGNERS, c: "#3b82f6" },
                 { l: "Подписано договоров", v: signedContractsCount, c: "#10b981" },
-                { l: "Осталось свободных", v: designersRemaining, c: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : "#ef4444" },
+                { l: "Осталось свободных", v: designersRemaining, c: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : pal.bad },
               ].map((item, i) => (
-                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>{item.l}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{item.v}</div>
+                <div key={i} style={{ background: pal.mutedBg, borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
+                  <div style={{ fontSize: 11, color: pal.textSecondary }}>{item.l}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: pal.text, marginTop: 4 }}>{item.v}</div>
                 </div>
               ))}
             </div>
@@ -1065,67 +1176,67 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
           {/* База из справочника */}
           <div style={cardStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: 0 }}>Телефонный справочник ({designerDB.length} / {PHONE_BOOK_DESIGNERS})</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: pal.text, margin: 0 }}>Телефонный справочник ({designerDB.length} / {PHONE_BOOK_DESIGNERS})</h3>
               <button onClick={addDesigner} style={{
                 padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer",
-                background: "#3b82f6", color: "#fff", fontSize: 13, fontWeight: 600
+                background: pal.primary, color: pal.onPrimary, fontSize: 13, fontWeight: 600
               }}>+ Добавить дизайнера</button>
             </div>
 
             {designerDB.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8" }}>
+              <div style={{ textAlign: "center", padding: "30px 0", color: pal.textMuted }}>
                 <div style={{ fontSize: 14 }}>База пуста. Нажми «+ Добавить дизайнера» чтобы начать заносить контакты.</div>
               </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 700 }}>
                   <thead>
-                    <tr style={{ background: "#f8fafc" }}>
-                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "4%" }}>#</th>
-                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "22%" }}>Имя</th>
-                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "16%" }}>Телефон</th>
-                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "16%" }}>Специализация</th>
-                      <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "12%" }}>Статус</th>
-                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "22%" }}>Заметки</th>
+                    <tr style={{ background: pal.mutedBg }}>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "4%" }}>#</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "22%" }}>Имя</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "16%" }}>Телефон</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "16%" }}>Специализация</th>
+                      <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "12%" }}>Статус</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "22%" }}>Заметки</th>
                       <th style={{ padding: "10px 8px", width: "4%" }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {designerDB.map((d, idx) => (
-                      <tr key={d.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                        <td style={{ padding: "8px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontWeight: 600 }}>{idx + 1}</td>
-                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                      <tr key={d.id} style={{ background: idx % 2 === 0 ? pal.rowEven : pal.rowOdd }}>
+                        <td style={{ padding: "8px", borderBottom: `1px solid ${pal.rowLine}`, color: pal.textMuted, fontWeight: 600 }}>{idx + 1}</td>
+                        <td style={{ padding: "4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                           <input type="text" placeholder="Иванова Анна" value={d.name}
                             onChange={e => updateDesigner(d.id, "name", e.target.value)}
                             style={projInputStyle} />
                         </td>
-                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                           <input type="text" placeholder="+7..." value={d.phone}
                             onChange={e => updateDesigner(d.id, "phone", e.target.value)}
                             style={projInputStyle} />
                         </td>
-                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                           <input type="text" placeholder="Интерьер" value={d.specialization}
                             onChange={e => updateDesigner(d.id, "specialization", e.target.value)}
                             style={projInputStyle} />
                         </td>
-                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                           <select value={d.status} onChange={e => updateDesigner(d.id, "status", e.target.value)}
-                            style={{ ...projInputStyle, textAlign: "center", color: d.status === "подписан" ? "#16a34a" : d.status === "в работе" ? "#3b82f6" : d.status === "отказ" ? "#ef4444" : "#64748b" }}>
+                            style={{ ...projInputStyle, textAlign: "center", color: d.status === "подписан" ? pal.good : d.status === "в работе" ? pal.primary : d.status === "отказ" ? pal.bad : pal.textSecondary }}>
                             <option value="новый">Новый</option>
                             <option value="в работе">В работе</option>
                             <option value="подписан">Подписан</option>
                             <option value="отказ">Отказ</option>
                           </select>
                         </td>
-                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <td style={{ padding: "4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                           <input type="text" placeholder="..." value={d.notes}
                             onChange={e => updateDesigner(d.id, "notes", e.target.value)}
                             style={projInputStyle} />
                         </td>
-                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9", textAlign: "center" }}>
+                        <td style={{ padding: "4px", borderBottom: `1px solid ${pal.rowLine}`, textAlign: "center" }}>
                           <button onClick={() => removeDesigner(d.id)} style={{
-                            background: "none", border: "none", cursor: "pointer", color: "#ef4444",
+                            background: "none", border: "none", cursor: "pointer", color: pal.bad,
                             fontSize: 16, padding: 4, opacity: 0.5
                           }}
                             onMouseEnter={e => e.target.style.opacity = 1}
@@ -1140,12 +1251,12 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             )}
 
             <button onClick={addDesigner} style={{
-              marginTop: 14, padding: "10px 20px", borderRadius: 8, border: "2px dashed #e2e8f0",
-              cursor: "pointer", background: "transparent", color: "#94a3b8", fontSize: 13,
+              marginTop: 14, padding: "10px 20px", borderRadius: 8, border: `2px dashed ${pal.border}`,
+              cursor: "pointer", background: "transparent", color: pal.textMuted, fontSize: 13,
               fontWeight: 500, width: "100%"
             }}
-              onMouseEnter={e => { e.target.style.borderColor = "#3b82f6"; e.target.style.color = "#3b82f6"; }}
-              onMouseLeave={e => { e.target.style.borderColor = "#e2e8f0"; e.target.style.color = "#94a3b8"; }}
+              onMouseEnter={e => { e.target.style.borderColor = pal.primary; e.target.style.color = pal.primary; }}
+              onMouseLeave={e => { e.target.style.borderColor = pal.border; e.target.style.color = pal.textMuted; }}
             >+ Добавить дизайнера</button>
           </div>
         </div>
