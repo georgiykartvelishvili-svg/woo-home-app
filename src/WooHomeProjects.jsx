@@ -343,7 +343,12 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
 
   const cardStyle = { background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 };
 
-  // Cumulative monthly plan
+  // Total revenue = funnel money fact + project totals from contracts
+  const totalRevenueFact = useMemo(() => {
+    return projectTotals.designTotal + projectTotals.projectTotal;
+  }, [projectTotals]);
+
+  // Cumulative monthly plan (all metrics cumulative)
   const monthlyPlanRows = useMemo(() => {
     const rows = [
       { m: "Апрель", d: 2, note: "1 PM, найм менеджера по дизайнерам" },
@@ -356,12 +361,15 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
       { m: "Ноябрь", d: 4, note: "Крейсерская скорость" },
       { m: "Декабрь", d: 4, note: "Крейсерская скорость" },
     ];
-    let cumDeals = 0, cumMoney = 0;
+    let cumTouches = 0, cumMeetings = 0, cumKP = 0, cumDeals = 0, cumMoney = 0;
     return rows.map(row => {
       const p = buildMonthPlan(row.d);
+      cumTouches += p.touches;
+      cumMeetings += p.meetings;
+      cumKP += p.kp;
       cumDeals += p.deals;
       cumMoney += p.money;
-      return { ...row, plan: p, cumDeals, cumMoney };
+      return { ...row, plan: p, cumTouches, cumMeetings, cumKP, cumDeals, cumMoney };
     });
   }, []);
 
@@ -373,19 +381,27 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
         <p style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Календарь 2026 · Апрель–Декабрь</p>
       </div>
 
-      {/* KPI */}
+      {/* KPI — выручка = проектирование + проекты из договоров */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
-        {METRICS.map(m => (
-          <div key={m.key} style={{ background: "#fff", borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", borderLeft: `4px solid ${m.color}` }}>
-            <div style={{ fontSize: 11, color: "#64748b" }}>{m.icon} {m.label}</div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
-              <span style={{ fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
-                {totals.fact[m.key] > 0 ? fmtVal(totals.fact[m.key], m.isMoney) : "—"}
-              </span>
-              <span style={{ fontSize: 12, color: "#94a3b8" }}>/ {fmtVal(totals.plan[m.key], m.isMoney)}</span>
+        {METRICS.map(m => {
+          const plan = totals.plan[m.key];
+          const fact = m.key === "money" ? totalRevenueFact : totals.fact[m.key];
+          const pct = plan > 0 ? Math.round(fact / plan * 100) : 0;
+          return (
+            <div key={m.key} style={{ background: "#fff", borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)", borderLeft: `4px solid ${m.color}` }}>
+              <div style={{ fontSize: 11, color: "#64748b" }}>{m.icon} {m.key === "money" ? "Выручка (проект. + проекты)" : m.label}</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
+                <span style={{ fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
+                  {fact > 0 ? fmtVal(fact, m.isMoney) : "—"}
+                </span>
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>/ {fmtVal(plan, m.isMoney)}</span>
+              </div>
+              <div style={{ marginTop: 4, height: 4, background: "#e2e8f0", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: m.color, borderRadius: 2 }} />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Tabs */}
@@ -408,30 +424,6 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
       {/* ======= ПЛАН TO BE ======= */}
       {view === "plan" && (
         <div>
-          {/* План-факт сводка */}
-          <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>План-факт сводка</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
-              {METRICS.map(m => {
-                const plan = totals.plan[m.key];
-                const fact = totals.fact[m.key];
-                const pct = plan > 0 ? Math.round(fact / plan * 100) : 0;
-                return (
-                  <div key={m.key} style={{ padding: "14px 16px", background: "#f8fafc", borderRadius: 10, borderLeft: `4px solid ${m.color}` }}>
-                    <div style={{ fontSize: 11, color: "#64748b" }}>{m.icon} {m.label}</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>
-                      {fact > 0 ? fmtVal(fact, m.isMoney) : "—"} <span style={{ fontSize: 13, color: "#94a3b8", fontWeight: 400 }}>/ {fmtVal(plan, m.isMoney)}</span>
-                    </div>
-                    <div style={{ marginTop: 6, height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: m.color, borderRadius: 3, transition: "width 0.3s" }} />
-                    </div>
-                    <div style={{ fontSize: 11, color: pct >= 100 ? "#16a34a" : "#94a3b8", marginTop: 3, fontWeight: 600 }}>{pct}%</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Целевой финансовый результат */}
           <div style={cardStyle}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Целевой финансовый результат 2026</h3>
@@ -511,50 +503,37 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             <div style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", marginTop: 4 }}>Цифры на крейсерской скорости (Авг–Дек 2026)</div>
           </div>
 
-          {/* Помесячный план с накопительным итогом */}
+          {/* Помесячный план — накопительный итог по всем показателям */}
           <div style={cardStyle}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Помесячный план Апрель–Декабрь 2026</h3>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: "#f8fafc" }}>
-                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12 }}>Месяц</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#94a3b8", fontSize: 12 }}>Касания</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#6366f1", fontSize: 12 }}>Встречи</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#3b82f6", fontSize: 12 }}>КП</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6", fontSize: 12 }}>Договоры</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontSize: 12 }}>Выручка</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#0f172a", fontSize: 12 }}>Догов. накоп.</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#0f172a", fontSize: 12 }}>Выруч. накоп.</th>
-                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 11 }}>Комментарий</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthlyPlanRows.map((row, i) => (
-                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{row.m}</td>
-                    <td style={{ padding: "8px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>{row.plan.touches}</td>
-                    <td style={{ padding: "8px", textAlign: "center", color: "#6366f1", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.plan.meetings}</td>
-                    <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.plan.kp}</td>
-                    <td style={{ padding: "8px", textAlign: "center", color: "#8b5cf6", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{row.plan.deals}</td>
-                    <td style={{ padding: "8px", textAlign: "right", color: "#10b981", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{fmtMoney(row.plan.money)}</td>
-                    <td style={{ padding: "8px", textAlign: "center", color: "#0f172a", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{row.cumDeals}</td>
-                    <td style={{ padding: "8px", textAlign: "right", color: "#0f172a", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{fmtMoney(row.cumMoney)}</td>
-                    <td style={{ padding: "8px 12px", color: "#94a3b8", fontSize: 11, borderBottom: "1px solid #f1f5f9" }}>{row.note}</td>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Помесячный план Апрель–Декабрь 2026 (накопительный)</h3>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12 }}>Месяц</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#94a3b8", fontSize: 12 }}>Касания</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#6366f1", fontSize: 12 }}>Встречи</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#3b82f6", fontSize: 12 }}>КП</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6", fontSize: 12 }}>Договоры</th>
+                    <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontSize: 12 }}>Выручка</th>
+                    <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 11 }}>Комментарий</th>
                   </tr>
-                ))}
-                <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
-                  <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
-                  <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#94a3b8" }}>{totals.plan.touches}</td>
-                  <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#6366f1" }}>{totals.plan.meetings}</td>
-                  <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#3b82f6" }}>{totals.plan.kp}</td>
-                  <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#8b5cf6" }}>{totals.plan.deals}</td>
-                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#10b981" }}>{fmtMoney(totals.plan.money)}</td>
-                  <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>{monthlyPlanRows[monthlyPlanRows.length-1].cumDeals}</td>
-                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>{fmtMoney(monthlyPlanRows[monthlyPlanRows.length-1].cumMoney)}</td>
-                  <td style={{ padding: "8px", borderTop: "2px solid #3b82f6" }}></td>
-                </tr>
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {monthlyPlanRows.map((row, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                      <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{row.m}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>{row.cumTouches}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: "#6366f1", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.cumMeetings}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.cumKP}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: "#8b5cf6", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{row.cumDeals}</td>
+                      <td style={{ padding: "8px", textAlign: "right", color: "#10b981", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{fmtMoney(row.cumMoney)}</td>
+                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontSize: 11, borderBottom: "1px solid #f1f5f9" }}>{row.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* План найма */}
@@ -589,7 +568,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                 { l: "Встречи", c: "#6366f1" }, { l: "×50%→", arrow: true },
                 { l: "КП", c: "#3b82f6" }, { l: "×33%→", arrow: true },
                 { l: "Договоры", c: "#8b5cf6" }, { l: "×3М→", arrow: true },
-                { l: "Выручка", c: "#10b981" },
+                { l: "Выр. за проект.", c: "#10b981" },
               ].map((x, i) => x.arrow
                 ? <span key={i} style={{ color: "#94a3b8", fontWeight: 600 }}>{x.l}</span>
                 : <span key={i} style={{ background: x.c + "18", color: x.c, fontWeight: 700, padding: "4px 10px", borderRadius: 6 }}>{x.l}</span>
