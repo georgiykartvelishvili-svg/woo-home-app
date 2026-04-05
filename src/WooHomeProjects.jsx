@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area
@@ -567,10 +567,10 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                         <tr style={{ background: "#fafbfc" }}>
                           <th style={{ padding: "3px 14px", borderBottom: "1px solid #e2e8f0" }}></th>
                           {METRICS.map(m => (
-                            <React.Fragment key={m.key}>
+                            <Fragment key={m.key}>
                               <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#94a3b8" }}>план</th>
                               <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#059669" }}>факт</th>
-                            </React.Fragment>
+                            </Fragment>
                           ))}
                         </tr>
                       </thead>
@@ -581,7 +581,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                               {week.label}
                             </td>
                             {METRICS.map(metric => (
-                              <React.Fragment key={metric.key}>
+                              <Fragment key={metric.key}>
                                 <td style={{ padding: "4px 2px", textAlign: "center", borderBottom: "1px solid #f1f5f9", color: "#b0b8c4", fontSize: 11 }}>
                                   {fmtVal(week.plan[metric.key], metric.isMoney)}
                                 </td>
@@ -596,7 +596,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                                     onBlur={e => e.target.style.borderColor = "#e2e8f0"}
                                   />
                                 </td>
-                              </React.Fragment>
+                              </Fragment>
                             ))}
                           </tr>
                         ))}
@@ -604,7 +604,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                         <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
                           <td style={{ padding: "8px 14px", borderTop: "2px solid #3b82f6", color: "#0f172a", fontSize: 12 }}>Итого {month.short}</td>
                           {METRICS.map(metric => (
-                            <React.Fragment key={metric.key}>
+                            <Fragment key={metric.key}>
                               <td style={{ padding: "4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#64748b", fontSize: 11 }}>
                                 {fmtVal(month.plan[metric.key], metric.isMoney)}
                               </td>
@@ -612,7 +612,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                                 {month.monthFactFilled[metric.key] ? fmtVal(month.monthFact[metric.key], metric.isMoney) : "—"}
                                 {month.monthFactFilled[metric.key] && !metric.isMoney && <Deviation plan={month.plan[metric.key]} fact={month.monthFact[metric.key]} />}
                               </td>
-                            </React.Fragment>
+                            </Fragment>
                           ))}
                         </tr>
                       </tbody>
@@ -721,10 +721,10 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
               <tr>
                 <th style={{ padding: "3px 12px", borderBottom: "1px solid #e2e8f0" }}></th>
                 {METRICS.map(m => (
-                  <React.Fragment key={m.key}>
+                  <Fragment key={m.key}>
                     <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#94a3b8" }}>план</th>
                     <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#059669" }}>факт</th>
-                  </React.Fragment>
+                  </Fragment>
                 ))}
                 <th style={{ padding: "3px", borderBottom: "1px solid #e2e8f0" }}></th>
               </tr>
@@ -734,14 +734,14 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                 <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
                   <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{m.month}</td>
                   {METRICS.map(metric => (
-                    <React.Fragment key={metric.key}>
+                    <Fragment key={metric.key}>
                       <td style={{ padding: "6px 4px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>
                         {fmtVal(m.plan[metric.key], metric.isMoney)}
                       </td>
                       <td style={{ padding: "6px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: m.monthFactFilled[metric.key] ? metric.color : "#cbd5e1" }}>
                         {m.monthFactFilled[metric.key] ? fmtVal(m.monthFact[metric.key], metric.isMoney) : "—"}
                       </td>
-                    </React.Fragment>
+                    </Fragment>
                   ))}
                   <td style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: m.designersRemaining > 100 ? "#10b981" : m.designersRemaining > 50 ? "#f59e0b" : "#ef4444" }}>
                     {m.designersRemaining}
@@ -751,14 +751,14 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
               <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
                 <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
                 {METRICS.map(metric => (
-                  <React.Fragment key={metric.key}>
+                  <Fragment key={metric.key}>
                     <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#64748b" }}>
                       {fmtVal(totals.plan[metric.key], metric.isMoney)}
                     </td>
                     <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: totals.fact[metric.key] > 0 ? metric.color : "#cbd5e1" }}>
                       {totals.fact[metric.key] > 0 ? fmtVal(totals.fact[metric.key], metric.isMoney) : "—"}
                     </td>
-                  </React.Fragment>
+                  </Fragment>
                 ))}
                 <td style={{ padding: "6px 8px", textAlign: "center", borderTop: "2px solid #3b82f6", fontWeight: 700, color: "#f59e0b" }}>
                   {data[data.length - 1].designersRemaining}
