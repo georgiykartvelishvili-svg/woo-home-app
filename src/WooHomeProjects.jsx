@@ -98,9 +98,12 @@ function initFacts() {
   return f;
 }
 
+const CONTRACT_FILE_MAX_BYTES = 4 * 1024 * 1024;
+
 const emptyProject = () => ({
   id: Date.now() + Math.random(),
   name: "", designer: "", saleDate: "", designFee: "", projectSum: "", endDate: "",
+  contractFileName: "", contractFileData: "",
 });
 
 const emptyDesignerEntry = () => ({
@@ -154,6 +157,36 @@ export default function WooHomeProjects({ savedData, onDataChange, themeMode = "
   const addProject = () => setProjects(prev => [...prev, emptyProject()]);
   const removeProject = (id) => setProjects(prev => prev.length > 1 ? prev.filter(p => p.id !== id) : prev);
   const updateProject = (id, field, value) => setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+
+  const setProjectContractFile = (id, file) => {
+    if (!file) {
+      setProjects(prev => prev.map(p => p.id === id ? { ...p, contractFileName: "", contractFileData: "" } : p));
+      return;
+    }
+    if (file.size > CONTRACT_FILE_MAX_BYTES) {
+      window.alert(`Файл больше ${CONTRACT_FILE_MAX_BYTES / 1024 / 1024} МБ`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProjects(prev => prev.map(p => p.id === id ? {
+        ...p, contractFileName: file.name, contractFileData: reader.result,
+      } : p));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const updateSaleDate = (id, value) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const next = { ...p, saleDate: value };
+      if (!value) {
+        next.contractFileName = "";
+        next.contractFileData = "";
+      }
+      return next;
+    }));
+  };
 
   const addDesigner = () => setDesignerDB(prev => [...prev, emptyDesignerEntry()]);
   const removeDesigner = (id) => setDesignerDB(prev => prev.filter(d => d.id !== id));
@@ -348,11 +381,6 @@ export default function WooHomeProjects({ savedData, onDataChange, themeMode = "
 
   const cardStyle = { background: pal.cardBg, borderRadius: 12, padding: 20, boxShadow: pal.shadow, marginBottom: 16 };
 
-  // Total revenue = funnel money fact + project totals from contracts
-  const totalRevenueFact = useMemo(() => {
-    return projectTotals.designTotal + projectTotals.projectTotal;
-  }, [projectTotals]);
-
   // Cumulative monthly plan (all metrics cumulative)
   const monthlyPlanRows = useMemo(() => {
     const rows = [
@@ -386,15 +414,15 @@ export default function WooHomeProjects({ savedData, onDataChange, themeMode = "
         <p style={{ fontSize: 13, color: pal.textSecondary, marginTop: 4 }}>Календарь 2026 · Апрель–Декабрь</p>
       </div>
 
-      {/* KPI — выручка = проектирование + проекты из договоров */}
+      {/* KPI — факты воронки вводятся вручную по неделям (в т.ч. выручка) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
         {METRICS.map(m => {
           const plan = totals.plan[m.key];
-          const fact = m.key === "money" ? totalRevenueFact : totals.fact[m.key];
+          const fact = totals.fact[m.key];
           const pct = plan > 0 ? Math.round(fact / plan * 100) : 0;
           return (
             <div key={m.key} style={{ background: pal.cardBg, borderRadius: 10, padding: "12px 14px", boxShadow: pal.shadow, borderLeft: `4px solid ${m.color}` }}>
-              <div style={{ fontSize: 11, color: pal.textSecondary }}>{m.icon} {m.key === "money" ? "Выручка (проект. + проекты)" : m.label}</div>
+              <div style={{ fontSize: 11, color: pal.textSecondary }}>{m.icon} {m.label}</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
                 <span style={{ fontSize: 20, fontWeight: 700, color: pal.text }}>
                   {fact > 0 ? fmtVal(fact, m.isMoney) : "—"}
@@ -851,6 +879,7 @@ export default function WooHomeProjects({ savedData, onDataChange, themeMode = "
                     <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#f59e0b", fontSize: 12, width: "13%" }}>Проектирование ₽</th>
                     <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, width: "11%" }}>Дата заверш.</th>
                     <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: `2px solid ${pal.border}`, color: "#8b5cf6", fontSize: 12, width: "13%" }}>Сумма проекта ₽</th>
+                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: `2px solid ${pal.border}`, color: pal.textSecondary, fontSize: 12, minWidth: 140 }}>Договор</th>
                     <th style={{ padding: "10px 8px", width: "4%" }}></th>
                   </tr>
                 </thead>
@@ -873,11 +902,14 @@ export default function WooHomeProjects({ savedData, onDataChange, themeMode = "
                           onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
                       <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
-                        <input type="month" value={p.saleDate}
-                          onChange={e => updateProject(p.id, "saleDate", e.target.value)}
+                        <input
+                          type="month"
+                          value={p.saleDate}
+                          onChange={e => updateSaleDate(p.id, e.target.value)}
                           style={{ ...projInputStyle, textAlign: "center" }}
                           onFocus={e => e.target.style.borderColor = pal.primary}
-                          onBlur={e => e.target.style.borderColor = pal.border} />
+                          onBlur={e => e.target.style.borderColor = pal.border}
+                        />
                       </td>
                       <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="number" placeholder="150000" value={p.designFee}
@@ -887,11 +919,14 @@ export default function WooHomeProjects({ savedData, onDataChange, themeMode = "
                           onBlur={e => e.target.style.borderColor = pal.border} />
                       </td>
                       <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
-                        <input type="month" value={p.endDate}
+                        <input
+                          type="month"
+                          value={p.endDate}
                           onChange={e => updateProject(p.id, "endDate", e.target.value)}
                           style={{ ...projInputStyle, textAlign: "center" }}
                           onFocus={e => e.target.style.borderColor = "#8b5cf6"}
-                          onBlur={e => e.target.style.borderColor = pal.border} />
+                          onBlur={e => e.target.style.borderColor = pal.border}
+                        />
                       </td>
                       <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}` }}>
                         <input type="number" placeholder="3000000" value={p.projectSum}
@@ -899,6 +934,49 @@ export default function WooHomeProjects({ savedData, onDataChange, themeMode = "
                           style={{ ...projInputStyle, textAlign: "right", color: "#8b5cf6", fontWeight: 600 }}
                           onFocus={e => e.target.style.borderColor = "#8b5cf6"}
                           onBlur={e => e.target.style.borderColor = pal.border} />
+                      </td>
+                      <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}`, fontSize: 12, verticalAlign: "middle" }}>
+                        {!p.saleDate ? (
+                          <span style={{ color: pal.textMuted }}>Укажите дату продажи</span>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <label style={{ color: pal.primary, cursor: "pointer", fontWeight: 500 }}>
+                              <input
+                                type="file"
+                                accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
+                                style={{ display: "none" }}
+                                onChange={(e) => {
+                                  setProjectContractFile(p.id, e.target.files?.[0] ?? null);
+                                  e.target.value = "";
+                                }}
+                              />
+                              {p.contractFileName ? "Заменить файл" : "Прикрепить"}
+                            </label>
+                            {p.contractFileName && p.contractFileData ? (
+                              <>
+                                <a
+                                  href={p.contractFileData}
+                                  download={p.contractFileName}
+                                  style={{ color: pal.textSecondary, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                  title={p.contractFileName}
+                                >
+                                  {p.contractFileName}
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => setProjectContractFile(p.id, null)}
+                                  style={{
+                                    background: "none", border: "none", cursor: "pointer", color: pal.bad,
+                                    fontSize: 14, padding: 0, lineHeight: 1,
+                                  }}
+                                  title="Удалить файл"
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: "6px 4px", borderBottom: `1px solid ${pal.rowLine}`, textAlign: "center" }}>
                         <button onClick={() => removeProject(p.id)} style={{
