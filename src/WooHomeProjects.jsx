@@ -1,18 +1,16 @@
-import React, { useState, useMemo, useEffect, useRef, Fragment } from "react";
+import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area
 } from "recharts";
 
 // ============================================================
-// WOO HOME — Воронка по реальным неделям 2026
+// WOO HOME — Приборная панель Smart Home
 // ============================================================
 
 const TOTAL_DESIGNERS = 250;
-const INITIAL_PROCESSED = 18;
+const PHONE_BOOK_DESIGNERS = 110;
 const CONV = { touchToMeeting: 0.50, meetingToKP: 0.50, kpToDeal: 0.33 };
 
-// Реальный календарь 2026 (Апрель–Декабрь), недели по ISO (Пн–Вс)
 const CALENDAR = [
   { month: "Апрель", short: "Апр", deals: 2, weeks: [
     { label: "30.03 – 05.04" }, { label: "06.04 – 12.04" }, { label: "13.04 – 19.04" },
@@ -92,7 +90,6 @@ function Deviation({ plan, fact }) {
   </span>;
 }
 
-// Инициализация: globalWeekIdx + metricKey
 function initFacts() {
   const f = {};
   let idx = 0;
@@ -103,6 +100,11 @@ function initFacts() {
 const emptyProject = () => ({
   id: Date.now() + Math.random(),
   name: "", designer: "", saleDate: "", designFee: "", projectSum: "", endDate: "",
+});
+
+const emptyDesignerEntry = () => ({
+  id: Date.now() + Math.random(),
+  name: "", phone: "", specialization: "", status: "новый", notes: "",
 });
 
 const MONTHS_ALL = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"];
@@ -116,65 +118,132 @@ function dateToMonthIndex(dateStr) {
   return null;
 }
 
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
 export default function WooHomeProjects({ savedData, onDataChange }) {
   const [facts, setFacts] = useState(initFacts);
   const [view, setView] = useState("plan");
   const [expandedMonth, setExpandedMonth] = useState(null);
   const [projects, setProjects] = useState([emptyProject()]);
+  const [closedWeeks, setClosedWeeks] = useState({});
+  const [designerDB, setDesignerDB] = useState([]);
   const isLoadedRef = useRef(false);
 
-  // Загрузка данных из Firebase
   useEffect(() => {
     if (savedData && !isLoadedRef.current) {
       if (savedData.facts) setFacts(savedData.facts);
       if (savedData.projects) setProjects(savedData.projects);
+      if (savedData.closedWeeks) setClosedWeeks(savedData.closedWeeks);
+      if (savedData.designerDB) setDesignerDB(savedData.designerDB);
       isLoadedRef.current = true;
     }
   }, [savedData]);
 
-  // Сохранение данных в Firebase при изменениях
   useEffect(() => {
     if (!isLoadedRef.current) return;
     if (onDataChange) {
-      onDataChange({ facts, projects });
+      onDataChange({ facts, projects, closedWeeks, designerDB });
     }
-  }, [facts, projects]);
+  }, [facts, projects, closedWeeks, designerDB]);
 
   const addProject = () => setProjects(prev => [...prev, emptyProject()]);
   const removeProject = (id) => setProjects(prev => prev.length > 1 ? prev.filter(p => p.id !== id) : prev);
   const updateProject = (id, field, value) => setProjects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
 
+  const addDesigner = () => setDesignerDB(prev => [...prev, emptyDesignerEntry()]);
+  const removeDesigner = (id) => setDesignerDB(prev => prev.filter(d => d.id !== id));
+  const updateDesigner = (id, field, value) => setDesignerDB(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+
   const updateFact = (weekIdx, key, value) => setFacts(prev => ({ ...prev, [`${weekIdx}_${key}`]: value }));
   const getFact = (weekIdx, key) => facts[`${weekIdx}_${key}`] || "";
 
+  const toggleWeekClosed = (weekIdx) => {
+    setClosedWeeks(prev => {
+      const next = { ...prev };
+      if (next[weekIdx]) { delete next[weekIdx]; } else { next[weekIdx] = true; }
+      return next;
+    });
+  };
+
+  // ---- DATA with week closing + plan redistribution ----
   const data = useMemo(() => {
     let globalWeekIdx = 0;
-    let designersRemaining = TOTAL_DESIGNERS - INITIAL_PROCESSED;
 
     return CALENDAR.map((cal, mi) => {
       const monthPlan = buildMonthPlan(cal.deals);
       const numWeeks = cal.weeks.length;
 
-      // Недельный план (равномерное распределение)
-      const wp = {};
-      METRICS.forEach(mt => {
-        wp[mt.key] = Math.round(monthPlan[mt.key] / numWeeks);
+      // First pass: find closed weeks and their fact values
+      const weekIndices = [];
+      for (let i = 0; i < numWeeks; i++) {
+        weekIndices.push(globalWeekIdx + i);
+      }
+      const closedInMonth = weekIndices.filter(wi => closedWeeks[wi]);
+      const openInMonth = weekIndices.filter(wi => !closedWeeks[wi]);
+
+      // Calculate remaining plan after closed weeks
+      const closedFact = {};
+      METRICS.forEach(mt => { closedFact[mt.key] = 0; });
+      closedInMonth.forEach(wi => {
+        METRICS.forEach(mt => {
+          const v = parseFloat(getFact(wi, mt.key)) || 0;
+          closedFact[mt.key] += v;
+        });
       });
-      // Корректируем остаток в последнюю неделю
-      const wpLast = {};
+
+      // Remaining plan for open weeks
+      const remainingPlan = {};
       METRICS.forEach(mt => {
-        wpLast[mt.key] = monthPlan[mt.key] - wp[mt.key] * (numWeeks - 1);
+        remainingPlan[mt.key] = Math.max(0, monthPlan[mt.key] - closedFact[mt.key]);
       });
+
+      // Distribute remaining plan across open weeks
+      const openWeekPlan = {};
+      const openWeekPlanLast = {};
+      if (openInMonth.length > 0) {
+        METRICS.forEach(mt => {
+          openWeekPlan[mt.key] = Math.round(remainingPlan[mt.key] / openInMonth.length);
+          openWeekPlanLast[mt.key] = remainingPlan[mt.key] - openWeekPlan[mt.key] * (openInMonth.length - 1);
+        });
+      } else {
+        METRICS.forEach(mt => { openWeekPlan[mt.key] = 0; openWeekPlanLast[mt.key] = 0; });
+      }
+
+      // Default plan (no closed weeks)
+      const defaultWp = {};
+      METRICS.forEach(mt => { defaultWp[mt.key] = Math.round(monthPlan[mt.key] / numWeeks); });
+      const defaultWpLast = {};
+      METRICS.forEach(mt => { defaultWpLast[mt.key] = monthPlan[mt.key] - defaultWp[mt.key] * (numWeeks - 1); });
 
       const monthFact = {};
       const monthFactFilled = {};
       METRICS.forEach(mt => { monthFact[mt.key] = 0; monthFactFilled[mt.key] = false; });
 
+      let openIdx = 0;
       const weeks = cal.weeks.map((w, wi) => {
-        const thisWp = wi === numWeeks - 1 ? wpLast : wp;
+        const absIdx = globalWeekIdx;
+        const isClosed = !!closedWeeks[absIdx];
+
+        let thisWp;
+        if (closedInMonth.length === 0) {
+          // No closed weeks - use default distribution
+          thisWp = wi === numWeeks - 1 ? defaultWpLast : defaultWp;
+        } else if (isClosed) {
+          // Closed week - plan = fact
+          thisWp = {};
+          METRICS.forEach(mt => { thisWp[mt.key] = parseFloat(getFact(absIdx, mt.key)) || 0; });
+        } else {
+          // Open week - redistributed plan
+          const isLastOpen = absIdx === openInMonth[openInMonth.length - 1];
+          thisWp = isLastOpen ? openWeekPlanLast : openWeekPlan;
+          openIdx++;
+        }
+
         const weekFacts = {};
         METRICS.forEach(mt => {
-          const v = getFact(globalWeekIdx, mt.key);
+          const v = getFact(absIdx, mt.key);
           weekFacts[mt.key] = v;
           if (v !== "") {
             monthFact[mt.key] += parseFloat(v) || 0;
@@ -182,23 +251,20 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
           }
         });
 
-        const meetFact = parseFloat(weekFacts.meetings);
-        if (!isNaN(meetFact) && meetFact > 0) {
-          designersRemaining = Math.max(0, designersRemaining - meetFact);
-        }
-
-        const result = { weekIdx: globalWeekIdx, label: w.label, plan: thisWp, fact: weekFacts };
+        const result = { weekIdx: absIdx, label: w.label, plan: thisWp, fact: weekFacts, closed: isClosed };
         globalWeekIdx++;
         return result;
       });
 
-      if (!monthFactFilled.meetings) {
-        designersRemaining = Math.max(0, designersRemaining - monthPlan.meetings);
-      }
-
-      return { ...cal, monthIdx: mi, plan: monthPlan, weeks, monthFact, monthFactFilled, designersRemaining };
+      return { ...cal, monthIdx: mi, plan: monthPlan, weeks, monthFact, monthFactFilled };
     });
-  }, [facts]);
+  }, [facts, closedWeeks]);
+
+  // Designer base: decrease by number of signed contracts
+  const signedContractsCount = useMemo(() => {
+    return projects.filter(p => p.name && p.designer).length;
+  }, [projects]);
+  const designersRemaining = TOTAL_DESIGNERS - signedContractsCount;
 
   const totals = useMemo(() => {
     const t = { plan: {}, fact: {} };
@@ -210,7 +276,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
     return t;
   }, [data]);
 
-  // Денежный поток из проектов
+  // Cashflow from projects
   const cashflow = useMemo(() => {
     const months = new Array(24).fill(null).map((_, i) => ({
       month: ALL_MONTHS_LABELS[i], designIncome: 0, projectIncome: 0, total: 0,
@@ -241,6 +307,27 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
     return t;
   }, [projects]);
 
+  // Designer statistics from projects
+  const designerStats = useMemo(() => {
+    const stats = {};
+    projects.forEach(p => {
+      if (!p.designer) return;
+      if (!stats[p.designer]) stats[p.designer] = { contracts: 0, designTotal: 0, projectTotal: 0 };
+      stats[p.designer].contracts++;
+      stats[p.designer].designTotal += parseFloat(p.designFee) || 0;
+      stats[p.designer].projectTotal += parseFloat(p.projectSum) || 0;
+    });
+    return stats;
+  }, [projects]);
+
+  // Designer names from projects (for dropdown)
+  const designerNames = useMemo(() => {
+    const names = new Set();
+    projects.forEach(p => { if (p.designer) names.add(p.designer); });
+    designerDB.forEach(d => { if (d.name) names.add(d.name); });
+    return [...names].sort();
+  }, [projects, designerDB]);
+
   const toggleMonth = (mi) => setExpandedMonth(prev => prev === mi ? null : mi);
 
   const projInputStyle = {
@@ -254,12 +341,36 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
     color, transition: "border 0.2s", boxSizing: "border-box",
   });
 
+  const cardStyle = { background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 };
+
+  // Cumulative monthly plan
+  const monthlyPlanRows = useMemo(() => {
+    const rows = [
+      { m: "Апрель", d: 2, note: "1 PM, найм менеджера по дизайнерам" },
+      { m: "Май", d: 2, note: "Менеджер выходит, обучение" },
+      { m: "Июнь", d: 3, note: "Менеджер набрал темп" },
+      { m: "Июль", d: 3, note: "Выход 2-го PM" },
+      { m: "Август", d: 4, note: "Крейсерская скорость" },
+      { m: "Сентябрь", d: 4, note: "Крейсерская скорость" },
+      { m: "Октябрь", d: 4, note: "Крейсерская скорость" },
+      { m: "Ноябрь", d: 4, note: "Крейсерская скорость" },
+      { m: "Декабрь", d: 4, note: "Крейсерская скорость" },
+    ];
+    let cumDeals = 0, cumMoney = 0;
+    return rows.map(row => {
+      const p = buildMonthPlan(row.d);
+      cumDeals += p.deals;
+      cumMoney += p.money;
+      return { ...row, plan: p, cumDeals, cumMoney };
+    });
+  }, []);
+
   return (
     <div style={{ maxWidth: 1300, margin: "0 auto", padding: "24px 16px", fontFamily: "'Inter', -apple-system, sans-serif", background: "#f8fafc", minHeight: "100vh" }}>
 
       <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", margin: 0 }}>WOO Home — План-факт воронки</h1>
-        <p style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Календарь 2026 · Конверсии: касание→встреча 50%, встреча→КП 50%, КП→договор 33%</p>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", margin: 0 }}>Приборная панель Woo Home Smart Home</h1>
+        <p style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Календарь 2026 · Апрель–Декабрь</p>
       </div>
 
       {/* KPI */}
@@ -277,8 +388,8 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
         ))}
       </div>
 
-      {/* Табы */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "#fff", borderRadius: 10, padding: 4, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", width: "fit-content" }}>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "#fff", borderRadius: 10, padding: 4, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", width: "fit-content", flexWrap: "wrap" }}>
         {[
           { id: "plan", label: "План to be" },
           { id: "funnel", label: "Воронка по неделям" },
@@ -297,17 +408,56 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
       {/* ======= ПЛАН TO BE ======= */}
       {view === "plan" && (
         <div>
-          {/* Бизнес-модель */}
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Бизнес-модель WOO Home</h3>
+          {/* План-факт сводка */}
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>План-факт сводка</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+              {METRICS.map(m => {
+                const plan = totals.plan[m.key];
+                const fact = totals.fact[m.key];
+                const pct = plan > 0 ? Math.round(fact / plan * 100) : 0;
+                return (
+                  <div key={m.key} style={{ padding: "14px 16px", background: "#f8fafc", borderRadius: 10, borderLeft: `4px solid ${m.color}` }}>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>{m.icon} {m.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>
+                      {fact > 0 ? fmtVal(fact, m.isMoney) : "—"} <span style={{ fontSize: 13, color: "#94a3b8", fontWeight: 400 }}>/ {fmtVal(plan, m.isMoney)}</span>
+                    </div>
+                    <div style={{ marginTop: 6, height: 6, background: "#e2e8f0", borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: m.color, borderRadius: 3, transition: "width 0.3s" }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: pct >= 100 ? "#16a34a" : "#94a3b8", marginTop: 3, fontWeight: 600 }}>{pct}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Целевой финансовый результат */}
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Целевой финансовый результат 2026</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+              {[
+                { l: "Выручка", v: fmtMoney(totals.plan.money) + " ₽", c: "#10b981" },
+                { l: "Маржа (60%)", v: fmtMoney(totals.plan.money * 0.6) + " ₽", c: "#3b82f6" },
+                { l: "Агентские (10%)", v: "−" + fmtMoney(totals.plan.deals * 300_000) + " ₽", c: "#f59e0b" },
+                { l: "Прибыль", v: fmtMoney(totals.plan.money * 0.6 - totals.plan.deals * 300_000) + " ₽", c: "#8b5cf6" },
+              ].map((item, i) => (
+                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>{item.l}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{item.v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Компоненты бизнес-модели */}
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Компоненты бизнес-модели</h3>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
               {[
                 { l: "Средний чек", v: "3 000 000 ₽", c: "#3b82f6" },
                 { l: "Маржинальность", v: "60%", c: "#10b981" },
-                { l: "Себестоимость", v: "40% (1.2 млн)", c: "#ef4444" },
                 { l: "Комиссия дизайнера", v: "10% (300 тыс)", c: "#f59e0b" },
-                { l: "Цикл сделки", v: "24 месяца", c: "#8b5cf6" },
-                { l: "Потенциал допродаж", v: "до 80%", c: "#06b6d4" },
                 { l: "Мощность PM", v: "4–6 объектов", c: "#64748b" },
                 { l: "Учёт выручки", v: "По поступлению ДС", c: "#94a3b8" },
               ].map((p, i) => (
@@ -319,31 +469,25 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             </div>
           </div>
 
-          {/* Рынок дизайнеров */}
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 }}>
+          {/* Рынок дизайнеров (упрощённый) */}
+          <div style={cardStyle}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Рынок дизайнеров · Челябинск</h3>
-            <div style={{ maxWidth: 500 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
               {[
-                { l: "Всего дизайнеров", v: 250, w: 100, c: "#e2e8f0" },
-                { l: "В телефонном справочнике", v: 110, w: 44, c: "#94a3b8" },
-                { l: "Целевой АКБ (2+ проекта)", v: 72, w: 29, c: "#f59e0b" },
-                { l: "Обработано на старте", v: 18, w: 7, c: "#3b82f6" },
+                { l: "Всего дизайнеров", v: TOTAL_DESIGNERS, c: "#94a3b8" },
+                { l: "В телефонном справочнике", v: PHONE_BOOK_DESIGNERS, c: "#3b82f6" },
+                { l: "Целевое кол-во подписанных к концу года", v: 72, c: "#f59e0b" },
               ].map((item, i) => (
-                <div key={i} style={{ marginBottom: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}>
-                    <span style={{ color: "#64748b" }}>{item.l}</span>
-                    <span style={{ fontWeight: 700, color: "#1e293b" }}>{item.v}</span>
-                  </div>
-                  <div style={{ height: 16, background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${item.w}%`, background: item.c, borderRadius: 4 }} />
-                  </div>
+                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>{item.l}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{item.v}</div>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Конверсионная модель */}
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 }}>
+          <div style={cardStyle}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Конверсионная модель (обратный расчёт от договоров)</h3>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "16px 0", flexWrap: "wrap" }}>
               {[
@@ -367,8 +511,8 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             <div style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", marginTop: 4 }}>Цифры на крейсерской скорости (Авг–Дек 2026)</div>
           </div>
 
-          {/* Помесячный план */}
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 }}>
+          {/* Помесячный план с накопительным итогом */}
+          <div style={cardStyle}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Помесячный план Апрель–Декабрь 2026</h3>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
@@ -378,35 +522,26 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                   <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#6366f1", fontSize: 12 }}>Встречи</th>
                   <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#3b82f6", fontSize: 12 }}>КП</th>
                   <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6", fontSize: 12 }}>Договоры</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontSize: 12, fontWeight: 700 }}>Выручка</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontSize: 12 }}>Выручка</th>
+                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#0f172a", fontSize: 12 }}>Догов. накоп.</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#0f172a", fontSize: 12 }}>Выруч. накоп.</th>
                   <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 11 }}>Комментарий</th>
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { m: "Апрель", d: 2, note: "1 PM, найм менеджера по дизайнерам" },
-                  { m: "Май", d: 2, note: "Менеджер выходит, обучение" },
-                  { m: "Июнь", d: 3, note: "Менеджер набрал темп" },
-                  { m: "Июль", d: 3, note: "Выход 2-го PM" },
-                  { m: "Август", d: 4, note: "Крейсерская скорость" },
-                  { m: "Сентябрь", d: 4, note: "Крейсерская скорость" },
-                  { m: "Октябрь", d: 4, note: "Крейсерская скорость" },
-                  { m: "Ноябрь", d: 4, note: "Крейсерская скорость" },
-                  { m: "Декабрь", d: 4, note: "Крейсерская скорость" },
-                ].map((row, i) => {
-                  const p = buildMonthPlan(row.d);
-                  return (
-                    <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                      <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{row.m}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>{p.touches}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#6366f1", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{p.meetings}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{p.kp}</td>
-                      <td style={{ padding: "8px", textAlign: "center", color: "#8b5cf6", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{p.deals}</td>
-                      <td style={{ padding: "8px", textAlign: "right", color: "#10b981", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{fmtMoney(p.money)}</td>
-                      <td style={{ padding: "8px 12px", color: "#94a3b8", fontSize: 11, borderBottom: "1px solid #f1f5f9" }}>{row.note}</td>
-                    </tr>
-                  );
-                })}
+                {monthlyPlanRows.map((row, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{row.m}</td>
+                    <td style={{ padding: "8px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>{row.plan.touches}</td>
+                    <td style={{ padding: "8px", textAlign: "center", color: "#6366f1", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.plan.meetings}</td>
+                    <td style={{ padding: "8px", textAlign: "center", color: "#3b82f6", fontWeight: 600, borderBottom: "1px solid #f1f5f9" }}>{row.plan.kp}</td>
+                    <td style={{ padding: "8px", textAlign: "center", color: "#8b5cf6", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{row.plan.deals}</td>
+                    <td style={{ padding: "8px", textAlign: "right", color: "#10b981", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{fmtMoney(row.plan.money)}</td>
+                    <td style={{ padding: "8px", textAlign: "center", color: "#0f172a", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{row.cumDeals}</td>
+                    <td style={{ padding: "8px", textAlign: "right", color: "#0f172a", fontWeight: 700, borderBottom: "1px solid #f1f5f9" }}>{fmtMoney(row.cumMoney)}</td>
+                    <td style={{ padding: "8px 12px", color: "#94a3b8", fontSize: 11, borderBottom: "1px solid #f1f5f9" }}>{row.note}</td>
+                  </tr>
+                ))}
                 <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
                   <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
                   <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#94a3b8" }}>{totals.plan.touches}</td>
@@ -414,56 +549,16 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                   <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#3b82f6" }}>{totals.plan.kp}</td>
                   <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#8b5cf6" }}>{totals.plan.deals}</td>
                   <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#10b981" }}>{fmtMoney(totals.plan.money)}</td>
+                  <td style={{ padding: "8px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>{monthlyPlanRows[monthlyPlanRows.length-1].cumDeals}</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>{fmtMoney(monthlyPlanRows[monthlyPlanRows.length-1].cumMoney)}</td>
                   <td style={{ padding: "8px", borderTop: "2px solid #3b82f6" }}></td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Юнит-экономика */}
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Юнит-экономика 1 проекта</h3>
-            <div style={{ maxWidth: 500 }}>
-              {[
-                { l: "Средний чек", v: 3_000_000, pct: 100, c: "#3b82f6" },
-                { l: "Себестоимость (40%)", v: -1_200_000, pct: 40, c: "#ef4444" },
-                { l: "Маржа (60%)", v: 1_800_000, pct: 60, c: "#10b981" },
-                { l: "Комиссия дизайнера (10%)", v: -300_000, pct: 10, c: "#f59e0b" },
-                { l: "Прибыль с проекта", v: 1_500_000, pct: 50, c: "#8b5cf6" },
-              ].map((item, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 0" }}>
-                  <div style={{ width: 190, fontSize: 13, color: "#64748b" }}>{item.l}</div>
-                  <div style={{ flex: 1, height: 20, background: "#f1f5f9", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${item.pct}%`, background: item.c, borderRadius: 4 }} />
-                  </div>
-                  <div style={{ width: 90, textAlign: "right", fontSize: 13, fontWeight: 600, color: item.v < 0 ? "#ef4444" : "#1e293b" }}>
-                    {fmtMoney(Math.abs(item.v))} ₽
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Финансовый итог года */}
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 16 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Финансовый итог 2026 (Апр–Дек)</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-              {[
-                { l: "Выручка", v: fmtMoney(totals.plan.money) + " ₽", c: "#10b981" },
-                { l: "Маржа (60%)", v: fmtMoney(totals.plan.money * 0.6) + " ₽", c: "#3b82f6" },
-                { l: "Агентские (10%)", v: "−" + fmtMoney(totals.plan.deals * 300_000) + " ₽", c: "#f59e0b" },
-                { l: "Прибыль", v: fmtMoney(totals.plan.money * 0.6 - totals.plan.deals * 300_000) + " ₽", c: "#8b5cf6" },
-              ].map((item, i) => (
-                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>{item.l}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{item.v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Команда */}
-          <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+          {/* План найма */}
+          <div style={cardStyle}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>План найма</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               {[
@@ -502,13 +597,13 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             </div>
           </div>
 
-          {/* Месяцы */}
+          {/* Months */}
           {data.map((month, mi) => {
             const isExpanded = expandedMonth === mi;
             return (
               <div key={mi} style={{ background: "#fff", borderRadius: 10, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginBottom: 6, overflow: "hidden" }}>
 
-                {/* Заголовок месяца */}
+                {/* Month header */}
                 <div
                   onClick={() => toggleMonth(mi)}
                   style={{
@@ -545,13 +640,13 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
 
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 9, color: "#94a3b8" }}>👥</div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: month.designersRemaining > 100 ? "#10b981" : month.designersRemaining > 50 ? "#f59e0b" : "#ef4444" }}>
-                      {month.designersRemaining}
+                    <span style={{ fontSize: 14, fontWeight: 700, color: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : "#ef4444" }}>
+                      {designersRemaining}
                     </span>
                   </div>
                 </div>
 
-                {/* Недели */}
+                {/* Weeks */}
                 {isExpanded && (
                   <div>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -563,6 +658,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                               {m.icon} {m.label}
                             </th>
                           ))}
+                          <th style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid #e2e8f0", color: "#64748b", fontSize: 10, width: 60 }}>Статус</th>
                         </tr>
                         <tr style={{ background: "#fafbfc" }}>
                           <th style={{ padding: "3px 14px", borderBottom: "1px solid #e2e8f0" }}></th>
@@ -572,13 +668,14 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                               <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#059669" }}>факт</th>
                             </Fragment>
                           ))}
+                          <th style={{ padding: "3px", borderBottom: "1px solid #e2e8f0" }}></th>
                         </tr>
                       </thead>
                       <tbody>
                         {month.weeks.map((week, wi) => (
-                          <tr key={wi} style={{ background: wi % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                            <td style={{ padding: "8px 14px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: "#334155", fontSize: 12, whiteSpace: "nowrap" }}>
-                              {week.label}
+                          <tr key={wi} style={{ background: week.closed ? "#f0fdf4" : (wi % 2 === 0 ? "#fff" : "#fafbfc"), opacity: week.closed ? 0.7 : 1 }}>
+                            <td style={{ padding: "8px 14px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: week.closed ? "#16a34a" : "#334155", fontSize: 12, whiteSpace: "nowrap" }}>
+                              {week.closed && "✓ "}{week.label}
                             </td>
                             {METRICS.map(metric => (
                               <Fragment key={metric.key}>
@@ -586,21 +683,39 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                                   {fmtVal(week.plan[metric.key], metric.isMoney)}
                                 </td>
                                 <td style={{ padding: "3px 1px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
-                                  <input
-                                    type="number"
-                                    value={week.fact[metric.key]}
-                                    onChange={e => updateFact(week.weekIdx, metric.key, e.target.value)}
-                                    placeholder="—"
-                                    style={inpStyle(metric.color)}
-                                    onFocus={e => e.target.style.borderColor = metric.color}
-                                    onBlur={e => e.target.style.borderColor = "#e2e8f0"}
-                                  />
+                                  {week.closed ? (
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: metric.color }}>
+                                      {week.fact[metric.key] || "—"}
+                                    </span>
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      value={week.fact[metric.key]}
+                                      onChange={e => updateFact(week.weekIdx, metric.key, e.target.value)}
+                                      placeholder="—"
+                                      style={inpStyle(metric.color)}
+                                      onFocus={e => e.target.style.borderColor = metric.color}
+                                      onBlur={e => e.target.style.borderColor = "#e2e8f0"}
+                                    />
+                                  )}
                                 </td>
                               </Fragment>
                             ))}
+                            <td style={{ padding: "3px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleWeekClosed(week.weekIdx); }}
+                                style={{
+                                  padding: "4px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 10, fontWeight: 600,
+                                  background: week.closed ? "#dcfce7" : "#f1f5f9",
+                                  color: week.closed ? "#16a34a" : "#94a3b8",
+                                }}
+                              >
+                                {week.closed ? "Открыть" : "Закрыть"}
+                              </button>
+                            </td>
                           </tr>
                         ))}
-                        {/* Итого месяца */}
+                        {/* Month total */}
                         <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
                           <td style={{ padding: "8px 14px", borderTop: "2px solid #3b82f6", color: "#0f172a", fontSize: 12 }}>Итого {month.short}</td>
                           {METRICS.map(metric => (
@@ -614,6 +729,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
                               </td>
                             </Fragment>
                           ))}
+                          <td style={{ borderTop: "2px solid #3b82f6" }}></td>
                         </tr>
                       </tbody>
                     </table>
@@ -623,7 +739,7 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             );
           })}
 
-          {/* Общий итог */}
+          {/* Grand total */}
           <div style={{
             background: "#fff", borderRadius: 10, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", marginTop: 6,
             display: "grid", gridTemplateColumns: "130px repeat(5, 1fr) 70px",
@@ -633,263 +749,236 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             {METRICS.map(metric => (
               <div key={metric.key} style={{ textAlign: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: totals.fact[metric.key] > 0 ? metric.color : "#cbd5e1" }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: totals.fact[metric.key] > 0 ? metric.color : "#cbd5e1" }}>
                     {totals.fact[metric.key] > 0 ? fmtVal(totals.fact[metric.key], metric.isMoney) : "—"}
                   </span>
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>/{fmtVal(totals.plan[metric.key], metric.isMoney)}</span>
+                  <span style={{ fontSize: 10, color: "#94a3b8" }}>/{fmtVal(totals.plan[metric.key], metric.isMoney)}</span>
                 </div>
               </div>
             ))}
-            <div style={{ textAlign: "center", fontWeight: 700, color: data[data.length - 1].designersRemaining > 50 ? "#10b981" : "#ef4444" }}>
-              {data[data.length - 1].designersRemaining}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 10, padding: 10, background: "#fefce8", borderRadius: 8, fontSize: 11, color: "#854d0e" }}>
-            Кликните на месяц → раскроются реальные недели 2026 года с полями факта. Каждая факт-встреча минусует дизайнера из базы (старт: {TOTAL_DESIGNERS} − {INITIAL_PROCESSED} = {TOTAL_DESIGNERS - INITIAL_PROCESSED}).
-          </div>
-        </div>
-      )}
-
-      {/* ======= БАЗА ДИЗАЙНЕРОВ ======= */}
-      {view === "designers" && (
-        <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 16px" }}>Остаток базы дизайнеров</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-            <div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-                {[
-                  { label: "Всего на рынке", value: TOTAL_DESIGNERS, color: "#3b82f6" },
-                  { label: "Обработано на старте", value: INITIAL_PROCESSED, color: "#94a3b8" },
-                  { label: "Встреч по плану (год)", value: totals.plan.meetings, color: "#6366f1" },
-                  { label: "Останется к концу года", value: data[data.length - 1].designersRemaining, color: data[data.length - 1].designersRemaining > 50 ? "#10b981" : "#ef4444" },
-                ].map((item, i) => (
-                  <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 16px" }}>
-                    <div style={{ fontSize: 11, color: "#64748b" }}>{item.label}</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: item.color }}>{item.value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {data.map((m, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                  <div style={{ width: 30, fontSize: 12, fontWeight: 600, color: "#64748b" }}>{m.short}</div>
-                  <div style={{ flex: 1, height: 22, background: "#f1f5f9", borderRadius: 6, overflow: "hidden" }}>
-                    <div style={{
-                      height: "100%", borderRadius: 6, transition: "width 0.3s",
-                      width: `${(m.designersRemaining / TOTAL_DESIGNERS) * 100}%`,
-                      background: m.designersRemaining > 100 ? "#10b981" : m.designersRemaining > 50 ? "#f59e0b" : "#ef4444",
-                    }} />
-                  </div>
-                  <div style={{ width: 30, fontSize: 13, fontWeight: 600, color: "#1e293b", textAlign: "right" }}>{m.designersRemaining}</div>
-                  <div style={{ width: 80, fontSize: 11, color: m.monthFactFilled.meetings ? "#059669" : "#94a3b8" }}>
-                    −{m.monthFactFilled.meetings ? m.monthFact.meetings : m.plan.meetings}
-                    {m.monthFactFilled.meetings ? " (факт)" : " (план)"}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <ResponsiveContainer width="100%" height={350}>
-              <AreaChart data={data.map(m => ({ month: m.short, "Осталось дизайнеров": m.designersRemaining }))}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} domain={[0, TOTAL_DESIGNERS]} />
-                <Tooltip />
-                <Area type="monotone" dataKey="Осталось дизайнеров" fill="#bfdbfe" stroke="#3b82f6" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div style={{ textAlign: "center", fontWeight: 700, color: "#f59e0b" }}>{designersRemaining}</div>
           </div>
         </div>
       )}
 
       {/* ======= СВОДКА ======= */}
       {view === "summary" && (
-        <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflowX: "auto" }}>
+        <div style={cardStyle}>
           <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 16px" }}>Сводная таблица</h3>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr style={{ background: "#f8fafc" }}>
-                <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b" }}>Месяц</th>
-                {METRICS.map(m => (
-                  <th key={m.key} colSpan={2} style={{ padding: "10px 4px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: m.color, fontSize: 11 }}>
-                    {m.icon} {m.label}
-                  </th>
-                ))}
-                <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#f59e0b", fontSize: 11 }}>👥 База</th>
-              </tr>
-              <tr>
-                <th style={{ padding: "3px 12px", borderBottom: "1px solid #e2e8f0" }}></th>
-                {METRICS.map(m => (
-                  <Fragment key={m.key}>
-                    <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#94a3b8" }}>план</th>
-                    <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#059669" }}>факт</th>
-                  </Fragment>
-                ))}
-                <th style={{ padding: "3px", borderBottom: "1px solid #e2e8f0" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((m, i) => (
-                <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                  <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{m.month}</td>
-                  {METRICS.map(metric => (
-                    <Fragment key={metric.key}>
-                      <td style={{ padding: "6px 4px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>
-                        {fmtVal(m.plan[metric.key], metric.isMoney)}
-                      </td>
-                      <td style={{ padding: "6px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: m.monthFactFilled[metric.key] ? metric.color : "#cbd5e1" }}>
-                        {m.monthFactFilled[metric.key] ? fmtVal(m.monthFact[metric.key], metric.isMoney) : "—"}
-                      </td>
-                    </Fragment>
-                  ))}
-                  <td style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: m.designersRemaining > 100 ? "#10b981" : m.designersRemaining > 50 ? "#f59e0b" : "#ef4444" }}>
-                    {m.designersRemaining}
-                  </td>
-                </tr>
-              ))}
-              <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
-                <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
-                {METRICS.map(metric => (
-                  <Fragment key={metric.key}>
-                    <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#64748b" }}>
-                      {fmtVal(totals.plan[metric.key], metric.isMoney)}
-                    </td>
-                    <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: totals.fact[metric.key] > 0 ? metric.color : "#cbd5e1" }}>
-                      {totals.fact[metric.key] > 0 ? fmtVal(totals.fact[metric.key], metric.isMoney) : "—"}
-                    </td>
-                  </Fragment>
-                ))}
-                <td style={{ padding: "6px 8px", textAlign: "center", borderTop: "2px solid #3b82f6", fontWeight: 700, color: "#f59e0b" }}>
-                  {data[data.length - 1].designersRemaining}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ======= ДОГОВОРЫ (ПРОЕКТЫ) ======= */}
-      {view === "projects" && (
-        <div style={{ background: "#fff", borderRadius: 12, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: 0 }}>Реестр договоров</h3>
-            <button onClick={addProject} style={{
-              padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer",
-              background: "#3b82f6", color: "#fff", fontSize: 13, fontWeight: 600
-            }}>+ Добавить договор</button>
-          </div>
-
-          {/* KPI проектов */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
-            {[
-              { icon: "📋", label: "Договоров", value: projectTotals.count, color: "#3b82f6" },
-              { icon: "✏️", label: "За проектирование", value: fmtMoney(projectTotals.designTotal) + " ₽", color: "#f59e0b" },
-              { icon: "🏠", label: "За проекты", value: fmtMoney(projectTotals.projectTotal) + " ₽", color: "#8b5cf6" },
-              { icon: "💰", label: "Итого", value: fmtMoney(projectTotals.total) + " ₽", color: "#10b981" },
-            ].map((kpi, i) => (
-              <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "10px 14px", borderLeft: `4px solid ${kpi.color}` }}>
-                <div style={{ fontSize: 11, color: "#64748b" }}>{kpi.icon} {kpi.label}</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 2 }}>{kpi.value}</div>
-              </div>
-            ))}
-          </div>
-
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 800 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "4%" }}>#</th>
-                  <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "18%" }}>Проект</th>
-                  <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#6366f1", fontSize: 12, width: "14%" }}>Дизайнер</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "11%" }}>Дата продажи</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#f59e0b", fontSize: 12, width: "13%" }}>Проектирование ₽</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "11%" }}>Дата заверш.</th>
-                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6", fontSize: 12, width: "14%" }}>Сумма проекта ₽</th>
-                  <th style={{ padding: "10px 8px", width: "4%" }}></th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b" }}>Месяц</th>
+                  {METRICS.map(m => (
+                    <th key={m.key} colSpan={2} style={{ padding: "10px 4px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: m.color, fontSize: 11 }}>
+                      {m.icon} {m.label}
+                    </th>
+                  ))}
+                  <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#f59e0b", fontSize: 11 }}>👥 База</th>
+                </tr>
+                <tr>
+                  <th style={{ padding: "3px 12px", borderBottom: "1px solid #e2e8f0" }}></th>
+                  {METRICS.map(m => (
+                    <Fragment key={m.key}>
+                      <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#94a3b8" }}>план</th>
+                      <th style={{ padding: "3px", textAlign: "center", borderBottom: "1px solid #e2e8f0", fontSize: 9, color: "#059669" }}>факт</th>
+                    </Fragment>
+                  ))}
+                  <th style={{ padding: "3px", borderBottom: "1px solid #e2e8f0" }}></th>
                 </tr>
               </thead>
               <tbody>
-                {projects.map((p, idx) => (
-                  <tr key={p.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                    <td style={{ padding: "10px 8px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontWeight: 600 }}>{idx + 1}</td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
-                      <input type="text" placeholder="ЖК Парковый..." value={p.name}
-                        onChange={e => updateProject(p.id, "name", e.target.value)}
-                        style={projInputStyle}
-                        onFocus={e => e.target.style.borderColor = "#3b82f6"}
-                        onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
-                      <input type="text" placeholder="Иванова А." value={p.designer}
-                        onChange={e => updateProject(p.id, "designer", e.target.value)}
-                        style={projInputStyle}
-                        onFocus={e => e.target.style.borderColor = "#6366f1"}
-                        onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
-                      <input type="month" value={p.saleDate}
-                        onChange={e => updateProject(p.id, "saleDate", e.target.value)}
-                        style={{ ...projInputStyle, textAlign: "center" }}
-                        onFocus={e => e.target.style.borderColor = "#3b82f6"}
-                        onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
-                      <input type="number" placeholder="150000" value={p.designFee}
-                        onChange={e => updateProject(p.id, "designFee", e.target.value)}
-                        style={{ ...projInputStyle, textAlign: "right", color: "#f59e0b", fontWeight: 600 }}
-                        onFocus={e => e.target.style.borderColor = "#f59e0b"}
-                        onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
-                      <input type="month" value={p.endDate}
-                        onChange={e => updateProject(p.id, "endDate", e.target.value)}
-                        style={{ ...projInputStyle, textAlign: "center" }}
-                        onFocus={e => e.target.style.borderColor = "#8b5cf6"}
-                        onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
-                      <input type="number" placeholder="3000000" value={p.projectSum}
-                        onChange={e => updateProject(p.id, "projectSum", e.target.value)}
-                        style={{ ...projInputStyle, textAlign: "right", color: "#8b5cf6", fontWeight: 600 }}
-                        onFocus={e => e.target.style.borderColor = "#8b5cf6"}
-                        onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9", textAlign: "center" }}>
-                      <button onClick={() => removeProject(p.id)} style={{
-                        background: "none", border: "none", cursor: "pointer", color: "#ef4444",
-                        fontSize: 16, padding: 4, opacity: 0.5
-                      }}
-                        onMouseEnter={e => e.target.style.opacity = 1}
-                        onMouseLeave={e => e.target.style.opacity = 0.5}
-                      >✕</button>
+                {data.map((m, i) => (
+                  <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                    <td style={{ padding: "10px 12px", fontWeight: 600, color: "#334155", borderBottom: "1px solid #f1f5f9" }}>{m.month}</td>
+                    {METRICS.map(metric => (
+                      <Fragment key={metric.key}>
+                        <td style={{ padding: "6px 4px", textAlign: "center", color: "#94a3b8", borderBottom: "1px solid #f1f5f9" }}>
+                          {fmtVal(m.plan[metric.key], metric.isMoney)}
+                        </td>
+                        <td style={{ padding: "6px 4px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: m.monthFactFilled[metric.key] ? metric.color : "#cbd5e1" }}>
+                          {m.monthFactFilled[metric.key] ? fmtVal(m.monthFact[metric.key], metric.isMoney) : "—"}
+                        </td>
+                      </Fragment>
+                    ))}
+                    <td style={{ padding: "6px 8px", textAlign: "center", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : "#ef4444" }}>
+                      {designersRemaining}
                     </td>
                   </tr>
                 ))}
+                <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
+                  <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
+                  {METRICS.map(metric => (
+                    <Fragment key={metric.key}>
+                      <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: "#64748b" }}>
+                        {fmtVal(totals.plan[metric.key], metric.isMoney)}
+                      </td>
+                      <td style={{ padding: "6px 4px", textAlign: "center", borderTop: "2px solid #3b82f6", color: totals.fact[metric.key] > 0 ? metric.color : "#cbd5e1" }}>
+                        {totals.fact[metric.key] > 0 ? fmtVal(totals.fact[metric.key], metric.isMoney) : "—"}
+                      </td>
+                    </Fragment>
+                  ))}
+                  <td style={{ padding: "6px 8px", textAlign: "center", borderTop: "2px solid #3b82f6", fontWeight: 700, color: "#f59e0b" }}>
+                    {designersRemaining}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
+        </div>
+      )}
 
-          <button onClick={addProject} style={{
-            marginTop: 14, padding: "10px 20px", borderRadius: 8, border: "2px dashed #e2e8f0",
-            cursor: "pointer", background: "transparent", color: "#94a3b8", fontSize: 13,
-            fontWeight: 500, width: "100%"
-          }}
-            onMouseEnter={e => { e.target.style.borderColor = "#3b82f6"; e.target.style.color = "#3b82f6"; }}
-            onMouseLeave={e => { e.target.style.borderColor = "#e2e8f0"; e.target.style.color = "#94a3b8"; }}
-          >+ Добавить договор</button>
+      {/* ======= ДОГОВОРЫ ======= */}
+      {view === "projects" && (
+        <div>
+          <div style={cardStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: 0 }}>Реестр договоров</h3>
+              <button onClick={addProject} style={{
+                padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+                background: "#3b82f6", color: "#fff", fontSize: 13, fontWeight: 600
+              }}>+ Добавить договор</button>
+            </div>
+
+            {/* KPI */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+              {[
+                { icon: "📋", label: "Договоров", value: projectTotals.count, color: "#3b82f6" },
+                { icon: "✏️", label: "За проектирование", value: fmtMoney(projectTotals.designTotal) + " ₽", color: "#f59e0b" },
+                { icon: "🏠", label: "За проекты", value: fmtMoney(projectTotals.projectTotal) + " ₽", color: "#8b5cf6" },
+                { icon: "💰", label: "Итого", value: fmtMoney(projectTotals.total) + " ₽", color: "#10b981" },
+              ].map((kpi, i) => (
+                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "10px 14px", borderLeft: `4px solid ${kpi.color}` }}>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>{kpi.icon} {kpi.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginTop: 2 }}>{kpi.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 800 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "4%" }}>#</th>
+                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "16%" }}>Проект</th>
+                    <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#6366f1", fontSize: 12, width: "14%" }}>Дизайнер</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "11%" }}>Дата продажи</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#f59e0b", fontSize: 12, width: "13%" }}>Проектирование ₽</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "11%" }}>Дата заверш.</th>
+                    <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6", fontSize: 12, width: "13%" }}>Сумма проекта ₽</th>
+                    <th style={{ padding: "10px 8px", width: "4%" }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.map((p, idx) => (
+                    <tr key={p.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontWeight: 600 }}>{idx + 1}</td>
+                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <input type="text" placeholder="ЖК Парковый..." value={p.name}
+                          onChange={e => updateProject(p.id, "name", e.target.value)}
+                          style={projInputStyle}
+                          onFocus={e => e.target.style.borderColor = "#3b82f6"}
+                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                      </td>
+                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <input type="text" list="designer-list" placeholder="Иванова А." value={p.designer}
+                          onChange={e => updateProject(p.id, "designer", e.target.value)}
+                          style={{ ...projInputStyle, color: "#6366f1" }}
+                          onFocus={e => e.target.style.borderColor = "#6366f1"}
+                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                      </td>
+                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <input type="month" value={p.saleDate}
+                          onChange={e => updateProject(p.id, "saleDate", e.target.value)}
+                          style={{ ...projInputStyle, textAlign: "center" }}
+                          onFocus={e => e.target.style.borderColor = "#3b82f6"}
+                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                      </td>
+                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <input type="number" placeholder="150000" value={p.designFee}
+                          onChange={e => updateProject(p.id, "designFee", e.target.value)}
+                          style={{ ...projInputStyle, textAlign: "right", color: "#f59e0b", fontWeight: 600 }}
+                          onFocus={e => e.target.style.borderColor = "#f59e0b"}
+                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                      </td>
+                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <input type="month" value={p.endDate}
+                          onChange={e => updateProject(p.id, "endDate", e.target.value)}
+                          style={{ ...projInputStyle, textAlign: "center" }}
+                          onFocus={e => e.target.style.borderColor = "#8b5cf6"}
+                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                      </td>
+                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9" }}>
+                        <input type="number" placeholder="3000000" value={p.projectSum}
+                          onChange={e => updateProject(p.id, "projectSum", e.target.value)}
+                          style={{ ...projInputStyle, textAlign: "right", color: "#8b5cf6", fontWeight: 600 }}
+                          onFocus={e => e.target.style.borderColor = "#8b5cf6"}
+                          onBlur={e => e.target.style.borderColor = "#e2e8f0"} />
+                      </td>
+                      <td style={{ padding: "6px 4px", borderBottom: "1px solid #f1f5f9", textAlign: "center" }}>
+                        <button onClick={() => removeProject(p.id)} style={{
+                          background: "none", border: "none", cursor: "pointer", color: "#ef4444",
+                          fontSize: 16, padding: 4, opacity: 0.5
+                        }}
+                          onMouseEnter={e => e.target.style.opacity = 1}
+                          onMouseLeave={e => e.target.style.opacity = 0.5}
+                        >✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <datalist id="designer-list">
+                {designerNames.map(n => <option key={n} value={n} />)}
+              </datalist>
+            </div>
+
+            <button onClick={addProject} style={{
+              marginTop: 14, padding: "10px 20px", borderRadius: 8, border: "2px dashed #e2e8f0",
+              cursor: "pointer", background: "transparent", color: "#94a3b8", fontSize: 13,
+              fontWeight: 500, width: "100%"
+            }}
+              onMouseEnter={e => { e.target.style.borderColor = "#3b82f6"; e.target.style.color = "#3b82f6"; }}
+              onMouseLeave={e => { e.target.style.borderColor = "#e2e8f0"; e.target.style.color = "#94a3b8"; }}
+            >+ Добавить договор</button>
+          </div>
+
+          {/* Статистика по дизайнерам */}
+          {Object.keys(designerStats).length > 0 && (
+            <div style={cardStyle}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 16px" }}>Статистика по дизайнерам</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+                {Object.entries(designerStats).map(([name, stats]) => (
+                  <div key={name} style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 16px", borderLeft: "4px solid #6366f1" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{name}</div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                      Договоров: <strong style={{ color: "#3b82f6" }}>{stats.contracts}</strong>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      Проектирование: <strong style={{ color: "#f59e0b" }}>{fmtMoney(stats.designTotal)} ₽</strong>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      Проекты: <strong style={{ color: "#8b5cf6" }}>{fmtMoney(stats.projectTotal)} ₽</strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ======= ПЛАН ПО ДЕНЬГАМ ======= */}
       {view === "cashflow" && (
-        <div style={{ background: "#fff", borderRadius: 12, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", overflowX: "auto" }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 4px" }}>Денежный поток по месяцам</h3>
-          <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 16px" }}>На основе договоров: проектирование → в месяц продажи, сумма проекта → в месяц завершения</p>
+        <div style={cardStyle}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: "0 0 4px" }}>План по деньгам</h3>
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 16px" }}>Сводка по факту подписанных проектов</p>
 
           {/* KPI */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
             {[
+              { icon: "📋", label: "Подписано договоров", value: projectTotals.count, color: "#3b82f6" },
               { icon: "✏️", label: "Проектирование", value: fmtMoney(projectTotals.designTotal) + " ₽", color: "#f59e0b" },
               { icon: "🏠", label: "Проекты", value: fmtMoney(projectTotals.projectTotal) + " ₽", color: "#8b5cf6" },
               { icon: "💰", label: "Итого", value: fmtMoney(projectTotals.total) + " ₽", color: "#10b981" },
@@ -901,56 +990,59 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
             ))}
           </div>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr style={{ background: "#f8fafc" }}>
-                <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", minWidth: 80 }}>Месяц</th>
-                <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#f59e0b" }}>Проектирование</th>
-                <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6" }}>Проекты</th>
-                <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontWeight: 700 }}>Итого</th>
-                <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#0f172a", fontWeight: 700 }}>Нарастающим</th>
-                <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#94a3b8" }}>Проекты</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cashflow.map((m, i) => {
-                const hasData = m.total > 0;
-                return (
-                  <tr key={i} style={{ background: hasData ? "#f0fdf4" : (i % 2 === 0 ? "#fff" : "#fafbfc"), opacity: i < 3 && !hasData ? 0.4 : 1 }}>
-                    <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: hasData ? "#0f172a" : "#94a3b8" }}>
-                      {i === 12 && <div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 700 }}>2027</div>}
-                      {m.month}
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.designIncome ? "#f59e0b" : "#e2e8f0", fontWeight: m.designIncome ? 600 : 400 }}>
-                      {m.designIncome ? fmtMoney(m.designIncome) : "—"}
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.projectIncome ? "#8b5cf6" : "#e2e8f0", fontWeight: m.projectIncome ? 600 : 400 }}>
-                      {m.projectIncome ? fmtMoney(m.projectIncome) : "—"}
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.total ? "#10b981" : "#e2e8f0", fontWeight: 700 }}>
-                      {m.total ? fmtMoney(m.total) : "—"}
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", fontWeight: 700, color: m.cumTotal ? "#0f172a" : "#e2e8f0" }}>
-                      {m.cumTotal ? fmtMoney(m.cumTotal) : "—"}
-                    </td>
-                    <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontSize: 11 }}>
-                      {[...m.names.design.map(n => "✏️ " + n), ...m.names.project.map(n => "🏠 " + n)].join(", ") || "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-              <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
-                <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
-                <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#f59e0b" }}>{fmtMoney(projectTotals.designTotal)}</td>
-                <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#8b5cf6" }}>{fmtMoney(projectTotals.projectTotal)}</td>
-                <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#10b981" }}>{fmtMoney(projectTotals.total)}</td>
-                <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>{fmtMoney(projectTotals.total)}</td>
-                <td style={{ padding: "8px", borderTop: "2px solid #3b82f6" }}></td>
-              </tr>
-            </tbody>
-          </table>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: "#f8fafc" }}>
+                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", minWidth: 80 }}>Месяц</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#f59e0b" }}>Проектирование</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#8b5cf6" }}>Проекты</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#10b981", fontWeight: 700 }}>Итого</th>
+                  <th style={{ padding: "10px 8px", textAlign: "right", borderBottom: "2px solid #e2e8f0", color: "#0f172a", fontWeight: 700 }}>Нарастающим</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#94a3b8" }}>Проекты</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cashflow.map((m, i) => {
+                  const hasData = m.total > 0;
+                  if (!hasData && i < 3) return null;
+                  return (
+                    <tr key={i} style={{ background: hasData ? "#f0fdf4" : (i % 2 === 0 ? "#fff" : "#fafbfc") }}>
+                      <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontWeight: 600, color: hasData ? "#0f172a" : "#94a3b8" }}>
+                        {i === 12 && <div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 700 }}>2027</div>}
+                        {m.month}
+                      </td>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.designIncome ? "#f59e0b" : "#e2e8f0", fontWeight: m.designIncome ? 600 : 400 }}>
+                        {m.designIncome ? fmtMoney(m.designIncome) : "—"}
+                      </td>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.projectIncome ? "#8b5cf6" : "#e2e8f0", fontWeight: m.projectIncome ? 600 : 400 }}>
+                        {m.projectIncome ? fmtMoney(m.projectIncome) : "—"}
+                      </td>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", color: m.total ? "#10b981" : "#e2e8f0", fontWeight: 700 }}>
+                        {m.total ? fmtMoney(m.total) : "—"}
+                      </td>
+                      <td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid #f1f5f9", fontWeight: 700, color: m.cumTotal ? "#0f172a" : "#e2e8f0" }}>
+                        {m.cumTotal ? fmtMoney(m.cumTotal) : "—"}
+                      </td>
+                      <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontSize: 11 }}>
+                        {[...m.names.design.map(n => "✏️ " + n), ...m.names.project.map(n => "🏠 " + n)].join(", ") || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr style={{ background: "#f0f9ff", fontWeight: 700 }}>
+                  <td style={{ padding: "12px", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>ИТОГО</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#f59e0b" }}>{fmtMoney(projectTotals.designTotal)}</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#8b5cf6" }}>{fmtMoney(projectTotals.projectTotal)}</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#10b981" }}>{fmtMoney(projectTotals.total)}</td>
+                  <td style={{ padding: "8px", textAlign: "right", borderTop: "2px solid #3b82f6", color: "#0f172a" }}>{fmtMoney(projectTotals.total)}</td>
+                  <td style={{ padding: "8px", borderTop: "2px solid #3b82f6" }}></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-          {/* График */}
+          {/* Chart */}
           {projectTotals.total > 0 && (
             <div style={{ marginTop: 20 }}>
               <h4 style={{ fontSize: 14, fontWeight: 600, color: "#0f172a", margin: "0 0 12px" }}>Поступления по месяцам</h4>
@@ -967,6 +1059,116 @@ export default function WooHomeProjects({ savedData, onDataChange }) {
               </ResponsiveContainer>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ======= БАЗА ДИЗАЙНЕРОВ ======= */}
+      {view === "designers" && (
+        <div>
+          {/* Обзор */}
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 16px" }}>Обзор базы дизайнеров</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+              {[
+                { l: "Всего в городе", v: TOTAL_DESIGNERS, c: "#94a3b8" },
+                { l: "В справочнике", v: PHONE_BOOK_DESIGNERS, c: "#3b82f6" },
+                { l: "Подписано договоров", v: signedContractsCount, c: "#10b981" },
+                { l: "Осталось свободных", v: designersRemaining, c: designersRemaining > 100 ? "#10b981" : designersRemaining > 50 ? "#f59e0b" : "#ef4444" },
+              ].map((item, i) => (
+                <div key={i} style={{ background: "#f8fafc", borderRadius: 10, padding: "14px 16px", borderLeft: `4px solid ${item.c}` }}>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>{item.l}</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>{item.v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* База из справочника */}
+          <div style={cardStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "#0f172a", margin: 0 }}>Телефонный справочник ({designerDB.length} / {PHONE_BOOK_DESIGNERS})</h3>
+              <button onClick={addDesigner} style={{
+                padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+                background: "#3b82f6", color: "#fff", fontSize: 13, fontWeight: 600
+              }}>+ Добавить дизайнера</button>
+            </div>
+
+            {designerDB.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "30px 0", color: "#94a3b8" }}>
+                <div style={{ fontSize: 14 }}>База пуста. Нажми «+ Добавить дизайнера» чтобы начать заносить контакты.</div>
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 700 }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "4%" }}>#</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "22%" }}>Имя</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "16%" }}>Телефон</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "16%" }}>Специализация</th>
+                      <th style={{ padding: "10px 8px", textAlign: "center", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "12%" }}>Статус</th>
+                      <th style={{ padding: "10px 8px", textAlign: "left", borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: 12, width: "22%" }}>Заметки</th>
+                      <th style={{ padding: "10px 8px", width: "4%" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {designerDB.map((d, idx) => (
+                      <tr key={d.id} style={{ background: idx % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                        <td style={{ padding: "8px", borderBottom: "1px solid #f1f5f9", color: "#94a3b8", fontWeight: 600 }}>{idx + 1}</td>
+                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                          <input type="text" placeholder="Иванова Анна" value={d.name}
+                            onChange={e => updateDesigner(d.id, "name", e.target.value)}
+                            style={projInputStyle} />
+                        </td>
+                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                          <input type="text" placeholder="+7..." value={d.phone}
+                            onChange={e => updateDesigner(d.id, "phone", e.target.value)}
+                            style={projInputStyle} />
+                        </td>
+                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                          <input type="text" placeholder="Интерьер" value={d.specialization}
+                            onChange={e => updateDesigner(d.id, "specialization", e.target.value)}
+                            style={projInputStyle} />
+                        </td>
+                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                          <select value={d.status} onChange={e => updateDesigner(d.id, "status", e.target.value)}
+                            style={{ ...projInputStyle, textAlign: "center", color: d.status === "подписан" ? "#16a34a" : d.status === "в работе" ? "#3b82f6" : d.status === "отказ" ? "#ef4444" : "#64748b" }}>
+                            <option value="новый">Новый</option>
+                            <option value="в работе">В работе</option>
+                            <option value="подписан">Подписан</option>
+                            <option value="отказ">Отказ</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9" }}>
+                          <input type="text" placeholder="..." value={d.notes}
+                            onChange={e => updateDesigner(d.id, "notes", e.target.value)}
+                            style={projInputStyle} />
+                        </td>
+                        <td style={{ padding: "4px", borderBottom: "1px solid #f1f5f9", textAlign: "center" }}>
+                          <button onClick={() => removeDesigner(d.id)} style={{
+                            background: "none", border: "none", cursor: "pointer", color: "#ef4444",
+                            fontSize: 16, padding: 4, opacity: 0.5
+                          }}
+                            onMouseEnter={e => e.target.style.opacity = 1}
+                            onMouseLeave={e => e.target.style.opacity = 0.5}
+                          >✕</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <button onClick={addDesigner} style={{
+              marginTop: 14, padding: "10px 20px", borderRadius: 8, border: "2px dashed #e2e8f0",
+              cursor: "pointer", background: "transparent", color: "#94a3b8", fontSize: 13,
+              fontWeight: 500, width: "100%"
+            }}
+              onMouseEnter={e => { e.target.style.borderColor = "#3b82f6"; e.target.style.color = "#3b82f6"; }}
+              onMouseLeave={e => { e.target.style.borderColor = "#e2e8f0"; e.target.style.color = "#94a3b8"; }}
+            >+ Добавить дизайнера</button>
+          </div>
         </div>
       )}
     </div>
